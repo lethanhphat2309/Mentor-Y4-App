@@ -17,7 +17,6 @@ with st.sidebar:
 # --- XỬ LÝ LƯU TRỮ LỊCH SỬ CHAT ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    # Lời chào đầu tiên của Mentor
     st.session_state.messages.append({
         "role": "model", 
         "parts": ["Chào Phát! Mình là Mentor Y Khoa của bạn. Bạn muốn tóm tắt tài liệu, làm trắc nghiệm hay tâm sự chuyện đi lâm sàng mệt mỏi hôm nay?"]
@@ -34,7 +33,7 @@ if user_input:
     st.chat_message("user").write(user_input)
     st.session_state.messages.append({"role": "user", "parts": [user_input]})
     
-    # Đọc file PDF (nếu Phát có tải lên)
+    # Đọc file PDF
     context_prompt = ""
     if uploaded_file is not None:
         try:
@@ -46,24 +45,31 @@ if user_input:
         except Exception as e:
             st.error("Lỗi đọc file PDF. Hãy thử file khác nhé!")
 
-    # Kết nối bộ não Gemini
+    # Kết nối bộ não Gemini bằng cơ chế Dò Tìm Tự Động
     if api_key:
         genai.configure(api_key=api_key)
         try:
-            model = genai.GenerativeModel('gemini-pro') 
+            chosen_model = 'gemini-2.5-flash' # Tên dự phòng
+            # Vòng lặp tự động tìm model Flash được miễn phí
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    if 'flash' in m.name.lower():
+                        chosen_model = m.name
+                        break
+            
+            model = genai.GenerativeModel(chosen_model) 
             system_prompt = "Bạn là Mentor Y Khoa của Phát, sinh viên Y4. Hãy linh hoạt, tóm tắt dễ hiểu, chia nhỏ kiến thức, hỏi đáp giấu kết quả, và luôn động viên Phát. "
             full_prompt = system_prompt + context_prompt + "\n\nYêu cầu của Phát: " + user_input
             
-            with st.spinner("Mentor đang suy nghĩ..."):
+            with st.spinner(f"Mentor đang suy nghĩ... (Đang dùng bộ não: {chosen_model})"):
                 response = model.generate_content(full_prompt)
                 st.chat_message("ai").write(response.text)
                 st.session_state.messages.append({"role": "model", "parts": [response.text]})
                 
-                # Gamification: Thưởng pháo hoa nếu Phát làm đúng
                 if "chúc mừng" in response.text.lower() or "đúng" in response.text.lower():
                     st.balloons()
                     st.success("Tích lũy kinh nghiệm thành công! Cứ thế phát huy nhé!")
         except Exception as e:
-            st.error(f"Lỗi API Key hoặc mạng. Vui lòng kiểm tra lại! Chi tiết: {e}")
+            st.error(f"Lỗi API Key hoặc mạng. Chi tiết: {e}")
     else:
         st.warning("Bạn quên nhập API Key ở góc trái kìa!")
