@@ -63,7 +63,7 @@ if user_input:
             
             with st.spinner(f"Mentor đang suy nghĩ... (Đang dùng bộ não: {chosen_model})"):
                 response = model.generate_content(full_prompt)
-                st.chat_message("ai").write(response.text)
+                st.chat_message("ai").markdown(response.text, unsafe_allow_html=True)
                 st.session_state.messages.append({"role": "model", "parts": [response.text]})
                 
                 if "chúc mừng" in response.text.lower() or "đúng" in response.text.lower():
