@@ -2,85 +2,101 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 
-# --- CÀI ĐẶT GIAO DIỆN ---
-st.set_page_config(page_title="Mentor Y4 - Bản Cao Cấp", page_icon="👨‍⚕️", layout="centered")
-st.title("👨‍⚕️ Mentor Y Khoa Cá Nhân (V3.0)")
+# --- 1. CẤU HÌNH GIAO DIỆN ---
+st.set_page_config(page_title="Mentor Y4 của Phát", page_icon="👨‍⚕️", layout="centered")
 
-# --- THANH CÔNG CỤ BÊN TRÁI ---
+# CSS để làm giao diện đẹp hơn và hiển thị trắc nghiệm rõ ràng
+st.markdown("""
+    <style>
+    .stChatMessage { border-radius: 10px; margin-bottom: 10px; }
+    details { border: 1px solid #4CAF50; border-radius: 5px; padding: 10px; background-color: #1e1e1e; }
+    summary { font-weight: bold; cursor: pointer; color: #4CAF50; }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("👨‍⚕️ Mentor Y Khoa Cá Nhân")
+st.caption("Phiên bản hỗ trợ Gemini 3 Pro & Flash - Thiết kế riêng cho Phát")
+
+# --- 2. THANH CÔNG CỤ (SIDEBAR) ---
 with st.sidebar:
     st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
     
-    # Cập nhật mã model chính xác từ hình ảnh Phát gửi
+    # Cập nhật danh sách các mô hình mạnh nhất 2026
     model_choice = st.selectbox(
         "Chọn Bộ Não AI:",
         ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
     )
     
     uploaded_file = st.file_uploader("Tải bài giảng PDF/TXT", type=["pdf", "txt"])
+    
     st.markdown("---")
-    st.info("Mẹo: Dùng Gemini 3 Pro Preview để phân tích cơ chế bệnh sinh sâu nhất!")
+    st.info("💡 **Mẹo cho Phát:** Nếu đi trực mệt, hãy bảo Mentor 'tóm tắt cực ngắn'. Nếu muốn học kỹ, hãy bảo 'giải thích cơ chế sâu'.")
 
-# --- XỬ LÝ LỊCH SỬ CHAT ---
+# --- 3. KHỞI TẠO LỊCH SỬ CHAT ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
     st.session_state.messages.append({
         "role": "model", 
-        "parts": ["Chào Phát! Mentor phiên bản Gemini 3 Pro đã sẵn sàng. Bạn muốn 'mổ xẻ' kiến thức nào hôm nay?"]
+        "parts": ["Chào Phát! Mentor đã sẵn sàng. Hôm nay bạn muốn học bài nào hay cần mình tạo thử thách trắc nghiệm?"]
     })
 
-# Hiển thị lịch sử chat (SỬA LỖI HIỂN THỊ HTML TẠI ĐÂY)
+# Hiển thị lịch sử chat
 for msg in st.session_state.messages:
     with st.chat_message("ai" if msg["role"] == "model" else "user"):
-        # Dùng st.markdown với unsafe_allow_html để hiện nút Click ẩn hiện
         st.markdown(msg["parts"][0], unsafe_allow_html=True)
 
-# --- XỬ LÝ CHAT VÀ GỌI AI ---
-user_input = st.chat_input("Nhắn cho Mentor...")
+# --- 4. XỬ LÝ CHAT VÀ GỌI API ---
+user_input = st.chat_input("Nhắn cho Mentor ở đây...")
 
 if user_input:
+    # Hiển thị tin nhắn người dùng
     st.chat_message("user").write(user_input)
     st.session_state.messages.append({"role": "user", "parts": [user_input]})
     
-    context_prompt = ""
+    # Đọc nội dung file PDF
+    pdf_text = ""
     if uploaded_file is not None:
         try:
             reader = PyPDF2.PdfReader(uploaded_file)
-            context = "".join([page.extract_text() for page in reader.pages])
-            # Giới hạn nội dung để tránh tràn bộ nhớ
-            context_prompt = f"\n\n[KIẾN THỨC TỪ PDF]:\n{context[:20000]}"
+            pdf_text = "".join([page.extract_text() for page in reader.pages])
+            # Giới hạn để không bị quá tải bộ nhớ
+            pdf_text = f"\n\n[NỘI DUNG TÀI LIỆU]:\n{pdf_text[:25000]}"
         except:
-            st.error("Lỗi đọc PDF rồi Phát ơi!")
+            st.error("Lỗi đọc file PDF rồi Phát ơi!")
 
     if api_key:
         genai.configure(api_key=api_key)
         try:
+            # Thiết lập mô hình
             model = genai.GenerativeModel(model_choice) 
             
-            # Cấu hình lệnh hệ thống để AI dùng đúng thẻ HTML ẩn đáp án
-system_instruction = (
-    "Bạn là Mentor Y khoa. Khi tạo câu hỏi trắc nghiệm, hãy tuân thủ TUYỆT ĐỐI định dạng sau:\n"
-    "1. Mỗi đáp án A, B, C, D phải nằm trên MỘT DÒNG RIÊNG BIỆT.\n"
-    "2. Sau mỗi câu hỏi, dùng thẻ HTML sau để ẩn đáp án:\n"
-    "<details><summary><b>Click để xem đáp án và giải thích cặn kẽ</b></summary>\n"
-    "<b>Đáp án đúng:</b> [A/B/C/D]<br>\n"
-    "<b>Giải thích sâu:</b> [Phân tích cơ chế bệnh sinh, tại sao chọn câu này, tại sao các câu khác sai]...\n"
-    "</details>\n"
-    "Hãy trình bày thật sạch sẽ và dễ đọc cho sinh viên Y."
-)
+            # CÂU LỆNH HỆ THỐNG (Quyết định cách AI trả lời)
+            system_instruction = (
+                "Bạn là Mentor Y khoa của Phát, một sinh viên Y4 có lối học chậm nhưng chắc, thích hiểu sâu cơ chế. "
+                "Khi tạo câu hỏi trắc nghiệm, bạn phải tuân thủ nghiêm ngặt các quy tắc sau:\n"
+                "1. Mỗi đáp án A, B, C, D phải bắt đầu trên một dòng mới.\n"
+                "2. Luôn giấu đáp án và lời giải trong thẻ HTML sau:\n"
+                "<details><summary>Click để xem đáp án và giải thích chi tiết</summary>\n"
+                "<b>Đáp án đúng:</b> [Điền đáp án]<br>\n"
+                "<b>Giải thích cơ chế:</b> [Giải thích thật sâu và cặn kẽ vì sao đúng/sai]</details>\n"
+                "3. Hãy động viên Phát thường xuyên. Nếu Phát làm đúng, hãy khen ngợi nhiệt tình."
+            )
             
-            full_prompt = system_instruction + context_prompt + "\n\nYêu cầu của Phát: " + user_input
+            full_prompt = system_instruction + pdf_text + "\n\nYêu cầu của Phát: " + user_input
             
-            with st.spinner(f"Đang dùng não {model_choice} suy luận..."):
+            with st.spinner(f"Mentor ({model_choice}) đang suy luận..."):
                 response = model.generate_content(full_prompt)
-                # Hiển thị kết quả dưới dạng Markdown có hỗ trợ HTML
+                
+                # Hiển thị câu trả lời của AI
                 st.chat_message("ai").markdown(response.text, unsafe_allow_html=True)
                 st.session_state.messages.append({"role": "model", "parts": [response.text]})
                 
-                # Hiệu ứng pháo hoa khi hoàn thành bài
-                if "đúng" in response.text.lower() or "chính xác" in response.text.lower():
+                # Hiệu ứng pháo hoa khi hoàn thành bài tốt
+                if any(word in response.text.lower() for word in ["đúng", "chính xác", "giỏi", "chúc mừng"]):
                     st.balloons()
+                    
         except Exception as e:
-            st.error(f"Lỗi rồi! Có thể tài khoản chưa được cấp quyền dùng bản Preview. Chi tiết: {e}")
+            st.error(f"Lỗi rồi! Có thể API Key sai hoặc mô hình chưa sẵn sàng. Chi tiết: {e}")
     else:
-        st.warning("Dán API Key vào thanh bên trái đã nhé!")
+        st.warning("Phát ơi, dán API Key vào thanh bên trái mới dùng được nhé!")
