@@ -58,7 +58,6 @@ if user_input:
             model = genai.GenerativeModel(model_choice) 
             
             # Cấu hình lệnh hệ thống để AI dùng đúng thẻ HTML ẩn đáp án
-            # Tìm và thay thế đoạn system_instruction cũ bằng đoạn này:
 system_instruction = (
     "Bạn là Mentor Y khoa. Khi tạo câu hỏi trắc nghiệm, hãy tuân thủ TUYỆT ĐỐI định dạng sau:\n"
     "1. Mỗi đáp án A, B, C, D phải nằm trên MỘT DÒNG RIÊNG BIỆT.\n"
