@@ -50,7 +50,7 @@ if user_input:
     if api_key:
         genai.configure(api_key=api_key)
         try:
-            model = genai.GenerativeModel('gemini-2.5-pro') 
+            model = genai.GenerativeModel('gemini-1.5-pro') 
             system_prompt = "Bạn là Mentor Y Khoa của Phát, sinh viên Y4. Hãy linh hoạt, tóm tắt dễ hiểu, chia nhỏ kiến thức, hỏi đáp giấu kết quả, và luôn động viên Phát. "
             full_prompt = system_prompt + context_prompt + "\n\nYêu cầu của Phát: " + user_input
             
