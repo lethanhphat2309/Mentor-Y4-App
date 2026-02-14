@@ -11,15 +11,15 @@ with st.sidebar:
     st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
     
-    # Cập nhật các mô hình mới nhất 2026
+    # Cập nhật mã model chính xác từ hình ảnh Phát gửi
     model_choice = st.selectbox(
         "Chọn Bộ Não AI:",
-        ["gemini-3-pro-latest", "gemini-3-flash-latest", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
+        ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
     )
     
     uploaded_file = st.file_uploader("Tải bài giảng PDF/TXT", type=["pdf", "txt"])
     st.markdown("---")
-    st.info("Mẹo: Dùng Gemini 3 Pro để phân tích ca lâm sàng khó!")
+    st.info("Mẹo: Dùng Gemini 3 Pro Preview để phân tích cơ chế bệnh sinh sâu nhất!")
 
 # --- XỬ LÝ LỊCH SỬ CHAT ---
 if "messages" not in st.session_state:
@@ -29,9 +29,10 @@ if "messages" not in st.session_state:
         "parts": ["Chào Phát! Mentor phiên bản Gemini 3 Pro đã sẵn sàng. Bạn muốn 'mổ xẻ' kiến thức nào hôm nay?"]
     })
 
-# Hiển thị lịch sử chat (Sửa lỗi hiển thị HTML)
+# Hiển thị lịch sử chat (SỬA LỖI HIỂN THỊ HTML TẠI ĐÂY)
 for msg in st.session_state.messages:
     with st.chat_message("ai" if msg["role"] == "model" else "user"):
+        # Dùng st.markdown với unsafe_allow_html để hiện nút Click ẩn hiện
         st.markdown(msg["parts"][0], unsafe_allow_html=True)
 
 # --- XỬ LÝ CHAT VÀ GỌI AI ---
@@ -46,6 +47,7 @@ if user_input:
         try:
             reader = PyPDF2.PdfReader(uploaded_file)
             context = "".join([page.extract_text() for page in reader.pages])
+            # Giới hạn nội dung để tránh tràn bộ nhớ
             context_prompt = f"\n\n[KIẾN THỨC TỪ PDF]:\n{context[:20000]}"
         except:
             st.error("Lỗi đọc PDF rồi Phát ơi!")
@@ -54,19 +56,27 @@ if user_input:
         genai.configure(api_key=api_key)
         try:
             model = genai.GenerativeModel(model_choice) 
-            # Dạy AI cách ẩn đáp án bằng HTML
-            instruction = "Bạn là Mentor Y khoa. Khi tạo trắc nghiệm, LUÔN dùng thẻ <details><summary>Click xem đáp án</summary>...</details> để giấu đáp án. "
-            full_prompt = instruction + context_prompt + "\n\nYêu cầu: " + user_input
+            
+            # Cấu hình lệnh hệ thống để AI dùng đúng thẻ HTML ẩn đáp án
+            system_instruction = (
+                "Bạn là Mentor Y khoa. Khi tạo câu hỏi trắc nghiệm, LUÔN LUÔN bao bọc đáp án và giải thích "
+                "trong thẻ HTML sau: <details><summary><b>Click để xem đáp án và giải thích cặn kẽ</b></summary>..."
+                "Đáp án: [A/B/C/D] <br> Giải thích: [Phân tích sâu cơ chế]...</details>. "
+                "Tuyệt đối không để đáp án lộ ra ngoài thẻ này."
+            )
+            
+            full_prompt = system_instruction + context_prompt + "\n\nYêu cầu của Phát: " + user_input
             
             with st.spinner(f"Đang dùng não {model_choice} suy luận..."):
                 response = model.generate_content(full_prompt)
-                # Dùng .markdown với unsafe_allow_html=True để hiện nút bấm ẩn hiện
+                # Hiển thị kết quả dưới dạng Markdown có hỗ trợ HTML
                 st.chat_message("ai").markdown(response.text, unsafe_allow_html=True)
                 st.session_state.messages.append({"role": "model", "parts": [response.text]})
                 
-                if "chúc mừng" in response.text.lower() or "đúng" in response.text.lower():
+                # Hiệu ứng pháo hoa khi hoàn thành bài
+                if "đúng" in response.text.lower() or "chính xác" in response.text.lower():
                     st.balloons()
         except Exception as e:
-            st.error(f"Lỗi rồi! Có thể mô hình này cần trả phí hoặc sai tên. Chi tiết: {e}")
+            st.error(f"Lỗi rồi! Có thể tài khoản chưa được cấp quyền dùng bản Preview. Chi tiết: {e}")
     else:
-        st.warning("Dán API Key vào đã nhé!")
+        st.warning("Dán API Key vào thanh bên trái đã nhé!")
