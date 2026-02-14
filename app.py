@@ -58,12 +58,17 @@ if user_input:
             model = genai.GenerativeModel(model_choice) 
             
             # Cấu hình lệnh hệ thống để AI dùng đúng thẻ HTML ẩn đáp án
-            system_instruction = (
-                "Bạn là Mentor Y khoa. Khi tạo câu hỏi trắc nghiệm, LUÔN LUÔN bao bọc đáp án và giải thích "
-                "trong thẻ HTML sau: <details><summary><b>Click để xem đáp án và giải thích cặn kẽ</b></summary>..."
-                "Đáp án: [A/B/C/D] <br> Giải thích: [Phân tích sâu cơ chế]...</details>. "
-                "Tuyệt đối không để đáp án lộ ra ngoài thẻ này."
-            )
+            # Tìm và thay thế đoạn system_instruction cũ bằng đoạn này:
+system_instruction = (
+    "Bạn là Mentor Y khoa. Khi tạo câu hỏi trắc nghiệm, hãy tuân thủ TUYỆT ĐỐI định dạng sau:\n"
+    "1. Mỗi đáp án A, B, C, D phải nằm trên MỘT DÒNG RIÊNG BIỆT.\n"
+    "2. Sau mỗi câu hỏi, dùng thẻ HTML sau để ẩn đáp án:\n"
+    "<details><summary><b>Click để xem đáp án và giải thích cặn kẽ</b></summary>\n"
+    "<b>Đáp án đúng:</b> [A/B/C/D]<br>\n"
+    "<b>Giải thích sâu:</b> [Phân tích cơ chế bệnh sinh, tại sao chọn câu này, tại sao các câu khác sai]...\n"
+    "</details>\n"
+    "Hãy trình bày thật sạch sẽ và dễ đọc cho sinh viên Y."
+)
             
             full_prompt = system_instruction + context_prompt + "\n\nYêu cầu của Phát: " + user_input
             
