@@ -3,73 +3,70 @@ import google.generativeai as genai
 import PyPDF2
 
 # --- CÀI ĐẶT GIAO DIỆN ---
-st.set_page_config(page_title="Trợ Lý Y4", page_icon="👨‍⚕️", layout="centered")
-st.title("👨‍⚕️ Mentor Y Khoa Cá Nhân")
+st.set_page_config(page_title="Mentor Y4 - Bản Cao Cấp", page_icon="👨‍⚕️", layout="centered")
+st.title("👨‍⚕️ Mentor Y Khoa Cá Nhân (V3.0)")
 
-# --- THANH CÔNG CỤ BÊN TRÁI (SIDEBAR) ---
+# --- THANH CÔNG CỤ BÊN TRÁI ---
 with st.sidebar:
-    st.header("⚙️ Cài đặt & Dữ liệu")
+    st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
-    uploaded_file = st.file_uploader("Tải bài giảng (PDF/TXT)", type=["pdf", "txt"])
+    
+    # Cập nhật các mô hình mới nhất 2026
+    model_choice = st.selectbox(
+        "Chọn Bộ Não AI:",
+        ["gemini-3-pro-latest", "gemini-3-flash-latest", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
+    )
+    
+    uploaded_file = st.file_uploader("Tải bài giảng PDF/TXT", type=["pdf", "txt"])
     st.markdown("---")
-    st.caption("Ứng dụng độc quyền thiết kế riêng để trị bệnh lười!")
+    st.info("Mẹo: Dùng Gemini 3 Pro để phân tích ca lâm sàng khó!")
 
-# --- XỬ LÝ LƯU TRỮ LỊCH SỬ CHAT ---
+# --- XỬ LÝ LỊCH SỬ CHAT ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
     st.session_state.messages.append({
         "role": "model", 
-        "parts": ["Chào Phát! Mình là Mentor Y Khoa của bạn. Bạn muốn tóm tắt tài liệu, làm trắc nghiệm hay tâm sự chuyện đi lâm sàng mệt mỏi hôm nay?"]
+        "parts": ["Chào Phát! Mentor phiên bản Gemini 3 Pro đã sẵn sàng. Bạn muốn 'mổ xẻ' kiến thức nào hôm nay?"]
     })
 
+# Hiển thị lịch sử chat (Sửa lỗi hiển thị HTML)
 for msg in st.session_state.messages:
     with st.chat_message("ai" if msg["role"] == "model" else "user"):
-        st.write(msg["parts"][0])
+        st.markdown(msg["parts"][0], unsafe_allow_html=True)
 
-# --- XỬ LÝ KHUNG CHAT VÀ GỌI AI ---
-user_input = st.chat_input("Nhắn cho Mentor (VD: Tạo 5 câu trắc nghiệm khó bài vừa tải lên...)")
+# --- XỬ LÝ CHAT VÀ GỌI AI ---
+user_input = st.chat_input("Nhắn cho Mentor...")
 
 if user_input:
     st.chat_message("user").write(user_input)
     st.session_state.messages.append({"role": "user", "parts": [user_input]})
     
-    # Đọc file PDF
     context_prompt = ""
     if uploaded_file is not None:
         try:
             reader = PyPDF2.PdfReader(uploaded_file)
-            context = ""
-            for page in reader.pages:
-                context += page.extract_text() + "\n"
-            context_prompt = f"\n\n[DỮ LIỆU BÀI GIẢNG HIỆN TẠI]:\n{context[:15000]}"
-        except Exception as e:
-            st.error("Lỗi đọc file PDF. Hãy thử file khác nhé!")
+            context = "".join([page.extract_text() for page in reader.pages])
+            context_prompt = f"\n\n[KIẾN THỨC TỪ PDF]:\n{context[:20000]}"
+        except:
+            st.error("Lỗi đọc PDF rồi Phát ơi!")
 
-    # Kết nối bộ não Gemini bằng cơ chế Dò Tìm Tự Động
     if api_key:
         genai.configure(api_key=api_key)
         try:
-            chosen_model = 'gemini-2.5-flash' # Tên dự phòng
-            # Vòng lặp tự động tìm model Flash được miễn phí
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    if 'flash' in m.name.lower():
-                        chosen_model = m.name
-                        break
+            model = genai.GenerativeModel(model_choice) 
+            # Dạy AI cách ẩn đáp án bằng HTML
+            instruction = "Bạn là Mentor Y khoa. Khi tạo trắc nghiệm, LUÔN dùng thẻ <details><summary>Click xem đáp án</summary>...</details> để giấu đáp án. "
+            full_prompt = instruction + context_prompt + "\n\nYêu cầu: " + user_input
             
-            model = genai.GenerativeModel(chosen_model) 
-            system_prompt = "Bạn là Mentor Y Khoa của Phát, sinh viên Y4. Hãy linh hoạt, tóm tắt dễ hiểu, chia nhỏ kiến thức, hỏi đáp giấu kết quả, và luôn động viên Phát. "
-            full_prompt = system_prompt + context_prompt + "\n\nYêu cầu của Phát: " + user_input
-            
-            with st.spinner(f"Mentor đang suy nghĩ... (Đang dùng bộ não: {chosen_model})"):
+            with st.spinner(f"Đang dùng não {model_choice} suy luận..."):
                 response = model.generate_content(full_prompt)
+                # Dùng .markdown với unsafe_allow_html=True để hiện nút bấm ẩn hiện
                 st.chat_message("ai").markdown(response.text, unsafe_allow_html=True)
                 st.session_state.messages.append({"role": "model", "parts": [response.text]})
                 
                 if "chúc mừng" in response.text.lower() or "đúng" in response.text.lower():
                     st.balloons()
-                    st.success("Tích lũy kinh nghiệm thành công! Cứ thế phát huy nhé!")
         except Exception as e:
-            st.error(f"Lỗi API Key hoặc mạng. Chi tiết: {e}")
+            st.error(f"Lỗi rồi! Có thể mô hình này cần trả phí hoặc sai tên. Chi tiết: {e}")
     else:
-        st.warning("Bạn quên nhập API Key ở góc trái kìa!")
+        st.warning("Dán API Key vào đã nhé!")
