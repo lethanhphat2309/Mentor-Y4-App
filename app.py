@@ -5,6 +5,8 @@ import json
 import re
 import random
 import gspread 
+import requests
+import io
 from google.oauth2.service_account import Credentials 
 from PIL import Image
 
@@ -55,7 +57,7 @@ def parse_sheet_data(worksheet):
         return []
 
 if "data_loaded" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý AI đã được sửa lỗi báo động giả. Cứ yên tâm học nhé!"]}]
+    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý đã kết nối Google Drive. Gửi link bài học cho mình nhé!"]}]
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
@@ -90,7 +92,7 @@ def sync_to_cloud():
 # --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI & XỬ LÝ ĐA TỆP ---
 with st.sidebar:
     st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
-    st.caption("Phiên bản Y4 - Fix Bug v4.3")
+    st.caption("Phiên bản Y4 - Drive Integration v5.0")
     st.markdown("---")
     
     st.header("⚙️ Hệ Thống")
@@ -104,11 +106,11 @@ with st.sidebar:
         st.session_state.current_page = selected_page
         st.rerun()
     
-    uploaded_files = st.file_uploader("📸 Tải cùng lúc NHIỀU ẢNH hoặc PDF", type=["pdf", "txt", "png", "jpg", "jpeg"], accept_multiple_files=True)
-    
     pdf_text = ""
     img_data_list = [] 
     
+    # KÊNH 1: TẢI FILE TRỰC TIẾP TỪ MÁY
+    uploaded_files = st.file_uploader("📂 Tải Ảnh/PDF từ máy tính", type=["pdf", "txt", "png", "jpg", "jpeg"], accept_multiple_files=True)
     if uploaded_files:
         for file in uploaded_files:
             file_ext = file.name.split('.')[-1].lower()
@@ -118,8 +120,7 @@ with st.sidebar:
                     extracted_text = ""
                     for page in reader.pages:
                         extracted_text += page.extract_text() or ""
-                        if len(extracted_text) > 15000:
-                            break
+                        if len(extracted_text) > 15000: break
                     pdf_text += f"\n\n[DỮ LIỆU SÁCH]:\n" + extracted_text[:15000]
                 except Exception: pass
             elif file_ext in ['png', 'jpg', 'jpeg']:
@@ -128,10 +129,51 @@ with st.sidebar:
                     img_data_list.append(img)
                     st.image(img, caption=f"Đã nạp: {file.name}", use_container_width=True)
                 except Exception: pass
-        
-        if pdf_text or img_data_list:
-            st.success(f"🎉 Đã nạp thành công tài liệu vào Mắt AI!")
+
+    # KÊNH 2: TẢI TỪ GOOGLE DRIVE
+    st.markdown("---")
+    drive_link = st.text_input("🔗 Hoặc Dán Link Google Drive vào đây:", placeholder="https://drive.google.com/file/d/...")
     
+    if drive_link:
+        try:
+            # Thuật toán bóc tách ID của file Drive
+            file_id = None
+            match1 = re.search(r"/file/d/([a-zA-Z0-9_-]+)", drive_link)
+            match2 = re.search(r"id=([a-zA-Z0-9_-]+)", drive_link)
+            if match1: file_id = match1.group(1)
+            elif match2: file_id = match2.group(1)
+            
+            if file_id:
+                with st.spinner("☁️ Đang kéo dữ liệu trực tiếp từ Drive..."):
+                    url = f"https://drive.google.com/uc?id={file_id}&export=download"
+                    response = requests.get(url)
+                    
+                    if response.status_code == 200:
+                        # Thử đọc như một file PDF trước
+                        try:
+                            reader = PyPDF2.PdfReader(io.BytesIO(response.content))
+                            extracted_text = ""
+                            for page in reader.pages:
+                                extracted_text += page.extract_text() or ""
+                                if len(extracted_text) > 15000: break # Vẫn giữ cơ chế ngắt để chống treo máy
+                            pdf_text += f"\n\n[DỮ LIỆU TỪ DRIVE]:\n" + extracted_text[:15000]
+                            st.success("✅ Đã kéo xong PDF từ Drive!")
+                        except:
+                            # Nếu không phải PDF thì thử đọc thành Hình ảnh
+                            try:
+                                img = Image.open(io.BytesIO(response.content))
+                                img_data_list.append(img)
+                                st.image(img, caption="Ảnh từ Drive", use_container_width=True)
+                                st.success("✅ Đã nạp xong Ảnh từ Drive!")
+                            except:
+                                st.error("❌ Định dạng không hỗ trợ. Hãy kiểm tra lại link.")
+                    else:
+                        st.error("❌ Không thể tải! Bạn nhớ bật quyền 'Bất kỳ ai có liên kết' nhé.")
+            else:
+                st.warning("⚠️ Link chưa đúng định dạng. Hãy copy lại từ Google Drive.")
+        except Exception as e:
+            st.error(f"Lỗi hệ thống kéo file: {e}")
+
     st.markdown("---")
     if st.button("🔄 Ép Đồng Bộ Lên Cloud Ngay"):
         sync_to_cloud()
@@ -271,6 +313,6 @@ elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
 # --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
 st.markdown("""
     <div class="footer">
-        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Fix Bug v4.3</p>
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Drive Integration v5.0</p>
     </div>
 """, unsafe_allow_html=True)
