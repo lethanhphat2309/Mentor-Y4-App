@@ -9,6 +9,7 @@ import requests
 import io
 from google.oauth2.service_account import Credentials 
 from PIL import Image
+from pptx import Presentation # MỚI: Thư viện chuyên đọc PowerPoint
 
 # --- 1. CẤU HÌNH GIAO DIỆN & BẢN QUYỀN THÀNH PHÁT ---
 st.set_page_config(page_title="Mentor Y4 - Thành Phát", page_icon="👨‍⚕️", layout="centered")
@@ -57,7 +58,7 @@ def parse_sheet_data(worksheet):
         return []
 
 if "data_loaded" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý đã kết nối Google Drive. Gửi link bài học cho mình nhé!"]}]
+    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý đã trang bị thêm mắt đọc PowerPoint. Gửi slide cho mình nhé!"]}]
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
@@ -92,7 +93,7 @@ def sync_to_cloud():
 # --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI & XỬ LÝ ĐA TỆP ---
 with st.sidebar:
     st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
-    st.caption("Phiên bản Y4 - Drive Integration v5.0")
+    st.caption("Phiên bản Y4 - PowerPoint Reader v6.0")
     st.markdown("---")
     
     st.header("⚙️ Hệ Thống")
@@ -109,8 +110,8 @@ with st.sidebar:
     pdf_text = ""
     img_data_list = [] 
     
-    # KÊNH 1: TẢI FILE TRỰC TIẾP TỪ MÁY
-    uploaded_files = st.file_uploader("📂 Tải Ảnh/PDF từ máy tính", type=["pdf", "txt", "png", "jpg", "jpeg"], accept_multiple_files=True)
+    # KÊNH 1: TẢI FILE TRỰC TIẾP TỪ MÁY (Hỗ trợ thêm .pptx)
+    uploaded_files = st.file_uploader("📂 Tải Ảnh/PDF/PPTX từ máy tính", type=["pdf", "txt", "png", "jpg", "jpeg", "pptx"], accept_multiple_files=True)
     if uploaded_files:
         for file in uploaded_files:
             file_ext = file.name.split('.')[-1].lower()
@@ -121,8 +122,23 @@ with st.sidebar:
                     for page in reader.pages:
                         extracted_text += page.extract_text() or ""
                         if len(extracted_text) > 15000: break
-                    pdf_text += f"\n\n[DỮ LIỆU SÁCH]:\n" + extracted_text[:15000]
+                    pdf_text += f"\n\n[DỮ LIỆU PDF]:\n" + extracted_text[:15000]
                 except Exception: pass
+            
+            # MỚI: Thuật toán đọc PowerPoint
+            elif file_ext == 'pptx':
+                try:
+                    prs = Presentation(file)
+                    extracted_text = ""
+                    for slide in prs.slides:
+                        for shape in slide.shapes:
+                            if hasattr(shape, "text"):
+                                extracted_text += shape.text + "\n"
+                        if len(extracted_text) > 15000: break # Ngắt an toàn chống treo
+                    pdf_text += f"\n\n[DỮ LIỆU SLIDE BÀI GIẢNG]:\n" + extracted_text[:15000]
+                except Exception as e: 
+                    st.error(f"Lỗi đọc PPTX: {e}")
+                    
             elif file_ext in ['png', 'jpg', 'jpeg']:
                 try:
                     img = Image.open(file)
@@ -136,7 +152,6 @@ with st.sidebar:
     
     if drive_link:
         try:
-            # Thuật toán bóc tách ID của file Drive
             file_id = None
             match1 = re.search(r"/file/d/([a-zA-Z0-9_-]+)", drive_link)
             match2 = re.search(r"id=([a-zA-Z0-9_-]+)", drive_link)
@@ -149,24 +164,48 @@ with st.sidebar:
                     response = requests.get(url)
                     
                     if response.status_code == 200:
-                        # Thử đọc như một file PDF trước
+                        file_bytes = io.BytesIO(response.content)
+                        success = False
+                        
+                        # Thử đọc như PDF
                         try:
-                            reader = PyPDF2.PdfReader(io.BytesIO(response.content))
+                            reader = PyPDF2.PdfReader(file_bytes)
                             extracted_text = ""
                             for page in reader.pages:
                                 extracted_text += page.extract_text() or ""
-                                if len(extracted_text) > 15000: break # Vẫn giữ cơ chế ngắt để chống treo máy
-                            pdf_text += f"\n\n[DỮ LIỆU TỪ DRIVE]:\n" + extracted_text[:15000]
+                                if len(extracted_text) > 15000: break
+                            pdf_text += f"\n\n[DỮ LIỆU DRIVE - PDF]:\n" + extracted_text[:15000]
                             st.success("✅ Đã kéo xong PDF từ Drive!")
-                        except:
-                            # Nếu không phải PDF thì thử đọc thành Hình ảnh
+                            success = True
+                        except: pass
+                        
+                        # Thử đọc như PPTX nếu không phải PDF
+                        if not success:
                             try:
-                                img = Image.open(io.BytesIO(response.content))
+                                file_bytes.seek(0) # Reset con trỏ file
+                                prs = Presentation(file_bytes)
+                                extracted_text = ""
+                                for slide in prs.slides:
+                                    for shape in slide.shapes:
+                                        if hasattr(shape, "text"):
+                                            extracted_text += shape.text + "\n"
+                                    if len(extracted_text) > 15000: break
+                                pdf_text += f"\n\n[DỮ LIỆU DRIVE - PPTX]:\n" + extracted_text[:15000]
+                                st.success("✅ Đã bóc tách thành công Text từ Slide PPTX trên Drive!")
+                                success = True
+                            except: pass
+
+                        # Thử đọc như Hình ảnh nếu cả 2 cái trên đều thất bại
+                        if not success:
+                            try:
+                                file_bytes.seek(0)
+                                img = Image.open(file_bytes)
                                 img_data_list.append(img)
                                 st.image(img, caption="Ảnh từ Drive", use_container_width=True)
                                 st.success("✅ Đã nạp xong Ảnh từ Drive!")
+                                success = True
                             except:
-                                st.error("❌ Định dạng không hỗ trợ. Hãy kiểm tra lại link.")
+                                st.error("❌ Định dạng không hỗ trợ hoặc file quá nặng. Hãy kiểm tra lại.")
                     else:
                         st.error("❌ Không thể tải! Bạn nhớ bật quyền 'Bất kỳ ai có liên kết' nhé.")
             else:
@@ -180,7 +219,7 @@ with st.sidebar:
         st.success("Đã lưu an toàn lên Cloud!")
 
 # ==========================================
-# CHẾ ĐỘ 1: CHAT MENTOR (ĐÃ FIX LỖI FALSE ALARM)
+# CHẾ ĐỘ 1: CHAT MENTOR
 # ==========================================
 if st.session_state.current_page == "💬 Chat Mentor":
     for msg in st.session_state.messages:
@@ -229,7 +268,7 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         st.session_state.current_page = "📝 Phòng Thi Ảo"
                         st.rerun() 
                     except Exception as e:
-                        st.error(f"Lỗi hệ thống: {e}")
+                        st.error(f"Lỗi hệ thống: Quota hoặc AI đang quá tải. Đợi 1 chút nhé!")
             
             # --- LUỒNG B: CHAT & TÓM TẮT ---
             else:
@@ -257,7 +296,7 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         st.session_state.last_summary = response.text
                         st.rerun() 
                     except Exception as e:
-                        st.error(f"Lỗi thật sự: {e}")
+                        st.error(f"Lỗi AI: Đợi 1 chút rồi thử lại nhé!")
         else:
             st.warning("Nhớ nhập API Key nhé Thành Phát!")
 
@@ -313,6 +352,6 @@ elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
 # --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
 st.markdown("""
     <div class="footer">
-        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Drive Integration v5.0</p>
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản PowerPoint Reader v6.0</p>
     </div>
 """, unsafe_allow_html=True)
