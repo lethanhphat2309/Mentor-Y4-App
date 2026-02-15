@@ -59,7 +59,7 @@ if "data_loaded" not in st.session_state:
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
-    st.session_state.last_summary = "" # MỚI: Bộ nhớ lưu bài tóm tắt để tải về
+    st.session_state.last_summary = ""
     st.session_state.data_loaded = True 
     
     if sheet_db:
@@ -90,14 +90,14 @@ def sync_to_cloud():
 # --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI & XỬ LÝ ĐA TỆP ---
 with st.sidebar:
     st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
-    st.caption("Phiên bản Y4 - Multi-Vision v4.0")
+    st.caption("Phiên bản Y4 - Multi-Vision v4.1")
     st.markdown("---")
     
     st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
     
-    # MỚI: Đã đẩy mô hình 3.0 flash lên vị trí mặc định đầu tiên
-    model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-3.0-flash", "gemini-3.0-pro", "gemini-3-flash-preview", "gemini-1.5-pro-latest"])
+    # MỚI: Đặt gemini-3-flash-preview lên vị trí số 1 theo ý chủ tịch
+    model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-3-flash-preview", "gemini-3.0-flash", "gemini-3.0-pro", "gemini-1.5-pro-latest"])
     
     st.markdown("---")
     menu_options = ["💬 Chat Mentor", "📝 Phòng Thi Ảo", "📓 Sổ Tay Câu Sai"]
@@ -117,7 +117,13 @@ with st.sidebar:
             if file_ext == 'pdf':
                 try:
                     reader = PyPDF2.PdfReader(file)
-                    pdf_text += f"\n\n[DỮ LIỆU SÁCH]:\n" + "".join([page.extract_text() for page in reader.pages])[:15000]
+                    extracted_text = ""
+                    # MỚI: Tối ưu đọc PDF nặng, tự ngắt để chống treo máy
+                    for page in reader.pages:
+                        extracted_text += page.extract_text() or ""
+                        if len(extracted_text) > 15000:
+                            break
+                    pdf_text += f"\n\n[DỮ LIỆU SÁCH]:\n" + extracted_text[:15000]
                 except: pass
             elif file_ext in ['png', 'jpg', 'jpeg']:
                 try:
@@ -127,7 +133,7 @@ with st.sidebar:
                 except: pass
         
         if pdf_text or img_data_list:
-            st.success(f"🎉 Đã nạp thành công {len(uploaded_files)} file vào Mắt AI!")
+            st.success(f"🎉 Đã nạp thành công tài liệu vào Mắt AI!")
     
     st.markdown("---")
     if st.button("🔄 Ép Đồng Bộ Lên Cloud Ngay"):
@@ -138,12 +144,10 @@ with st.sidebar:
 # CHẾ ĐỘ 1: CHAT MENTOR (MULTI-VISION & XUẤT FILE)
 # ==========================================
 if st.session_state.current_page == "💬 Chat Mentor":
-    # 1. Hiển thị lại lịch sử chat
     for msg in st.session_state.messages:
         with st.chat_message("ai" if msg["role"] == "model" else "user"):
             st.markdown(msg["parts"][0], unsafe_allow_html=True)
 
-    # 2. Ô nhập liệu
     user_input = st.chat_input("Nhắn Mentor (VD: Tóm tắt bài này cho mình)")
 
     if user_input:
@@ -188,11 +192,10 @@ if st.session_state.current_page == "💬 Chat Mentor":
                     except Exception as e:
                         st.error(f"Lỗi AI Quota. Đợi 30 giây rồi thử lại nhé!")
             
-            # --- LUỒNG B: CHAT VÀ TÓM TẮT BÀI HỌC (MỚI) ---
+            # --- LUỒNG B: CHAT VÀ TÓM TẮT BÀI HỌC ---
             else:
                 model = genai.GenerativeModel(model_choice)
                 
-                # MỚI: Cài đặt lệnh "Ép" AI trình bày đẹp như giáo án
                 format_instruction = (
                     "Bạn là Trưởng khoa Y. Hãy giải thích hoặc tóm tắt tài liệu một cách SÚC TÍCH, DỄ HIỂU. "
                     "BẮT BUỘC trình bày chuẩn Markdown: "
@@ -211,15 +214,13 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         st.chat_message("ai").markdown(response.text)
                         st.session_state.messages.append({"role": "model", "parts": [response.text]})
                         
-                        # MỚI: Lưu lại bài tóm tắt vào bộ nhớ để tải về
                         st.session_state.last_summary = response.text
-                        st.rerun() # Tải lại trang để hiện nút Download
+                        st.rerun() 
                     except:
                         st.error("Lỗi Quota: Hãy chờ 1 chút hoặc đổi sang AI khác nhé!")
         else:
             st.warning("Nhớ nhập API Key nhé Thành Phát!")
 
-    # 3. MỚI: NÚT TẢI BÀI TÓM TẮT (Nằm ở dưới cùng khu vực chat)
     if st.session_state.last_summary:
         st.markdown("---")
         st.download_button(
@@ -272,6 +273,6 @@ elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
 # --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
 st.markdown("""
     <div class="footer">
-        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản 3.0 Flash & Auto-Export</p>
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Flash Preview & Tối ưu Big Data</p>
     </div>
 """, unsafe_allow_html=True)
