@@ -4,9 +4,11 @@ import PyPDF2
 import json
 import re
 import random
+import gspread # MỚI: Ống hút dữ liệu
+from google.oauth2.service_account import Credentials # MỚI: Chìa khóa vào kho
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="Mentor Y4 - Tương Tác", page_icon="👨‍⚕️", layout="centered")
+st.set_page_config(page_title="Mentor Y4 - Cloud Sync", page_icon="👨‍⚕️", layout="centered")
 
 st.markdown("""
     <style>
@@ -16,18 +18,56 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("👨‍⚕️ Mentor Y Khoa Cá Nhân")
+st.caption("☁️ Đã kích hoạt công nghệ Đồng Bộ Đám Mây (Google Sheets)")
 
-# --- 2. BỘ NHỚ HỆ THỐNG ---
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "parts": ["Chào Phát! Muốn làm test, cứ nhắn có chữ 'trắc nghiệm' hoặc 'câu hỏi' nhé!"]}]
-if "quiz_data" not in st.session_state:
-    st.session_state.quiz_data = [] 
-if "wrong_notebook" not in st.session_state:
+# --- 2. KẾT NỐI GOOGLE SHEETS BÍ MẬT ---
+@st.cache_resource
+def init_gsheets():
+    try:
+        # Mở két sắt Streamlit lấy chìa khóa
+        creds_json = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
+        client = gspread.authorize(creds)
+        return client.open("Mentor_Y4_Database") # Mở file Excel của Phát
+    except Exception as e:
+        st.error("Chưa kết nối được Cloud. Phát kiểm tra lại Bước 1 (Secrets) nhé!")
+        return None
+
+sheet_db = init_gsheets()
+
+# --- 3. BỘ NHỚ HỆ THỐNG & TỰ ĐỘNG TẢI DỮ LIỆU ---
+if "data_loaded" not in st.session_state:
+    st.session_state.messages = [{"role": "model", "parts": ["Chào Phát! Dữ liệu của bạn đã được bảo vệ trên Cloud!"]}]
+    st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
-if "current_page" not in st.session_state:
     st.session_state.current_page = "💬 Chat Mentor"
+    st.session_state.data_loaded = True # Đánh dấu đã tải
+    
+    # Hút dữ liệu từ ô A1 của Google Sheets về App
+    if sheet_db:
+        try:
+            quiz_val = sheet_db.worksheet("QuizBank").acell('A1').value
+            if quiz_val: st.session_state.quiz_data = json.loads(quiz_val)
+            
+            wrong_val = sheet_db.worksheet("WrongNotebook").acell('A1').value
+            if wrong_val: st.session_state.wrong_notebook = json.loads(wrong_val)
+        except:
+            pass # Lần đầu tiên file Excel rỗng thì bỏ qua
 
-# --- 3. THANH ĐIỀU HƯỚNG BÊN TRÁI ---
+# Hàm Tự Động Bơm Dữ Liệu Lên Cloud
+def sync_to_cloud():
+    if sheet_db:
+        try:
+            # Gói toàn bộ câu hỏi thành 1 cục JSON và nhét thẳng vào ô A1
+            q_str = json.dumps(st.session_state.quiz_data, ensure_ascii=False)
+            w_str = json.dumps(st.session_state.wrong_notebook, ensure_ascii=False)
+            sheet_db.worksheet("QuizBank").update_acell('A1', q_str)
+            sheet_db.worksheet("WrongNotebook").update_acell('A1', w_str)
+        except Exception as e:
+            pass
+
+# --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI ---
 with st.sidebar:
     st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
@@ -43,45 +83,17 @@ with st.sidebar:
     
     uploaded_file = st.file_uploader("Tải tài liệu PDF", type=["pdf", "txt"])
     
-    # ==========================================
-    # MỚI: TÍNH NĂNG SAO LƯU VÀ KHÔI PHỤC
-    # ==========================================
     st.markdown("---")
-    st.header("💾 Đồng bộ & Sao lưu")
-    
-    # 1. Nút Tải xuống (Save Game)
-    backup_data = {
-        "messages": st.session_state.messages,
-        "quiz_data": st.session_state.quiz_data,
-        "wrong_notebook": st.session_state.wrong_notebook
-    }
-    json_backup = json.dumps(backup_data, ensure_ascii=False)
-    
-    st.download_button(
-        label="⬇️ Lưu Hồ Sơ (Tải Backup)",
-        data=json_backup,
-        file_name="Ho_So_Y4_Phat.json",
-        mime="application/json",
-        help="Tải toàn bộ lịch sử chat và câu hỏi về máy để lần sau dùng tiếp."
-    )
-    
-    # 2. Nút Tải lên (Load Game)
-    restore_file = st.file_uploader("⬆️ Khôi phục Hồ sơ (File JSON)", type=["json"], help="Tải file 'Ho_So_Y4_Phat.json' lên đây để khôi phục.")
-    if restore_file is not None:
-        if st.button("🔄 Bấm để Khôi Phục Ngay"):
-            try:
-                loaded_data = json.load(restore_file)
-                st.session_state.messages = loaded_data.get("messages", [{"role": "model", "parts": ["Đã khôi phục thành công!"]}])
-                st.session_state.quiz_data = loaded_data.get("quiz_data", [])
-                st.session_state.wrong_notebook = loaded_data.get("wrong_notebook", [])
-                st.success("Khôi phục dữ liệu thành công! Hãy chọn lại Tab để xem.")
-                st.rerun()
-            except Exception as e:
-                st.error("File không hợp lệ hoặc bị lỗi!")
+    st.caption("Quản lý Cloud:")
+    if st.button("🔄 Ép Đồng Bộ Lên Cloud Ngay"):
+        sync_to_cloud()
+        st.success("Đã lưu an toàn lên Google Sheets!")
+        
+    if st.button("🗑️ Xóa sạch Sổ Tay (Cả trên Cloud)"):
+        st.session_state.wrong_notebook = []
+        sync_to_cloud()
+        st.rerun()
 
-# ==========================================
-# CHẾ ĐỘ 1: CHAT MENTOR
-# ==========================================
 pdf_text = ""
 if uploaded_file is not None:
     try:
@@ -90,6 +102,9 @@ if uploaded_file is not None:
     except:
         pass
 
+# ==========================================
+# CHẾ ĐỘ 1: CHAT MENTOR
+# ==========================================
 if st.session_state.current_page == "💬 Chat Mentor":
     for msg in st.session_state.messages:
         with st.chat_message("ai" if msg["role"] == "model" else "user"):
@@ -118,14 +133,17 @@ if st.session_state.current_page == "💬 Chat Mentor":
                     "TUYỆT ĐỐI KHÔNG để dấu phẩy (,) ở cuối phần tử cuối cùng."
                 )
                 full_prompt = schema_instruction + pdf_text + "\n\nYêu cầu tạo test: " + user_input
-                with st.spinner("Đang soạn đề thi..."):
+                with st.spinner("Đang soạn đề thi và lưu lên Cloud..."):
                     try:
                         response = model.generate_content(full_prompt)
                         clean_json = re.sub(r',\s*]', ']', response.text)
                         clean_json = re.sub(r',\s*}', '}', clean_json)
                         new_questions = json.loads(clean_json)
+                        
                         st.session_state.quiz_data.extend(new_questions)
-                        st.session_state.messages.append({"role": "model", "parts": [f"Đã nạp thêm {len(new_questions)} câu hỏi vào Ngân Hàng Đề!"]})
+                        sync_to_cloud() # <--- TỰ ĐỘNG ĐỒNG BỘ LÊN CLOUD NGAY LẬP TỨC
+                        
+                        st.session_state.messages.append({"role": "model", "parts": [f"Đã nạp thêm {len(new_questions)} câu hỏi vào Ngân Hàng Đề và lưu lên Cloud!"]})
                         st.session_state.current_page = "📝 Phòng Thi Ảo"
                         st.rerun() 
                     except Exception as e:
@@ -144,7 +162,7 @@ if st.session_state.current_page == "💬 Chat Mentor":
 # CHẾ ĐỘ 2: PHÒNG THI ẢO 
 # ==========================================
 elif st.session_state.current_page == "📝 Phòng Thi Ảo":
-    st.subheader(f"📝 Ngân Hàng Đề Thi ({len(st.session_state.quiz_data)} câu)")
+    st.subheader(f"📝 Ngân Hàng Đề Thi Cloud ({len(st.session_state.quiz_data)} câu)")
     if len(st.session_state.quiz_data) == 0:
         st.info("Chưa có câu hỏi. Hãy về tab Chat Mentor yêu cầu tạo trắc nghiệm.")
     else:
@@ -163,8 +181,10 @@ elif st.session_state.current_page == "📝 Phòng Thi Ảo":
                     st.balloons()
                 else:
                     st.error(f"❌ SAI RỒI! \n\n**Đáp án đúng:** {q['answer']} \n\n**Giải thích sâu:** {q['explanation']}")
+                    # Tự động gắp vào sổ tay và lưu ngay lên Cloud
                     if not any(item['question'] == q['question'] for item in st.session_state.wrong_notebook):
                         st.session_state.wrong_notebook.append(q)
+                        sync_to_cloud() # <--- TỰ ĐỘNG LƯU CÂU SAI LÊN CLOUD
             st.markdown("---")
 
 # ==========================================
@@ -173,7 +193,7 @@ elif st.session_state.current_page == "📝 Phòng Thi Ảo":
 elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
     st.subheader("📓 Góc Ôn Tập Của Phát")
     if len(st.session_state.wrong_notebook) == 0:
-        st.success("Chưa có câu sai nào!")
+        st.success("Tuyệt vời! Bạn chưa làm sai câu nào.")
     else:
         st.warning(f"Có {len(st.session_state.wrong_notebook)} câu cần ôn lại:")
         for idx, wq in enumerate(st.session_state.wrong_notebook):
