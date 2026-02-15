@@ -9,7 +9,7 @@ import requests
 import io
 from google.oauth2.service_account import Credentials 
 from PIL import Image
-from pptx import Presentation # MỚI: Thư viện chuyên đọc PowerPoint
+from pptx import Presentation 
 
 # --- 1. CẤU HÌNH GIAO DIỆN & BẢN QUYỀN THÀNH PHÁT ---
 st.set_page_config(page_title="Mentor Y4 - Thành Phát", page_icon="👨‍⚕️", layout="centered")
@@ -58,7 +58,7 @@ def parse_sheet_data(worksheet):
         return []
 
 if "data_loaded" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý đã trang bị thêm mắt đọc PowerPoint. Gửi slide cho mình nhé!"]}]
+    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý đã được nâng cấp mắt đọc đa năng. Gửi link bài học cho mình nhé!"]}]
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
@@ -93,7 +93,7 @@ def sync_to_cloud():
 # --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI & XỬ LÝ ĐA TỆP ---
 with st.sidebar:
     st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
-    st.caption("Phiên bản Y4 - PowerPoint Reader v6.0")
+    st.caption("Phiên bản Y4 - Ultimate Drive v6.1")
     st.markdown("---")
     
     st.header("⚙️ Hệ Thống")
@@ -110,7 +110,7 @@ with st.sidebar:
     pdf_text = ""
     img_data_list = [] 
     
-    # KÊNH 1: TẢI FILE TRỰC TIẾP TỪ MÁY (Hỗ trợ thêm .pptx)
+    # KÊNH 1: TẢI FILE TRỰC TIẾP TỪ MÁY
     uploaded_files = st.file_uploader("📂 Tải Ảnh/PDF/PPTX từ máy tính", type=["pdf", "txt", "png", "jpg", "jpeg", "pptx"], accept_multiple_files=True)
     if uploaded_files:
         for file in uploaded_files:
@@ -125,7 +125,6 @@ with st.sidebar:
                     pdf_text += f"\n\n[DỮ LIỆU PDF]:\n" + extracted_text[:15000]
                 except Exception: pass
             
-            # MỚI: Thuật toán đọc PowerPoint
             elif file_ext == 'pptx':
                 try:
                     prs = Presentation(file)
@@ -134,7 +133,7 @@ with st.sidebar:
                         for shape in slide.shapes:
                             if hasattr(shape, "text"):
                                 extracted_text += shape.text + "\n"
-                        if len(extracted_text) > 15000: break # Ngắt an toàn chống treo
+                        if len(extracted_text) > 15000: break 
                     pdf_text += f"\n\n[DỮ LIỆU SLIDE BÀI GIẢNG]:\n" + extracted_text[:15000]
                 except Exception as e: 
                     st.error(f"Lỗi đọc PPTX: {e}")
@@ -148,41 +147,54 @@ with st.sidebar:
 
     # KÊNH 2: TẢI TỪ GOOGLE DRIVE
     st.markdown("---")
-    drive_link = st.text_input("🔗 Hoặc Dán Link Google Drive vào đây:", placeholder="https://drive.google.com/file/d/...")
+    drive_link = st.text_input("🔗 Hoặc Dán Link Google Drive vào đây:", placeholder="https://docs.google.com/...")
     
     if drive_link:
         try:
+            # MỚI: Bắt TẤT CẢ định dạng link của Google Drive
             file_id = None
-            match1 = re.search(r"/file/d/([a-zA-Z0-9_-]+)", drive_link)
-            match2 = re.search(r"id=([a-zA-Z0-9_-]+)", drive_link)
-            if match1: file_id = match1.group(1)
-            elif match2: file_id = match2.group(1)
+            match = re.search(r"/d/([a-zA-Z0-9_-]+)", drive_link)
+            if match: 
+                file_id = match.group(1)
+            else:
+                match = re.search(r"id=([a-zA-Z0-9_-]+)", drive_link)
+                if match: file_id = match.group(1)
             
             if file_id:
-                with st.spinner("☁️ Đang kéo dữ liệu trực tiếp từ Drive..."):
+                with st.spinner("☁️ Đang kéo dữ liệu, vượt trạm quét virus..."):
+                    session = requests.Session()
                     url = f"https://drive.google.com/uc?id={file_id}&export=download"
-                    response = requests.get(url)
+                    response = session.get(url, stream=True)
+                    
+                    # Cứu cánh cho các file lớn bị hỏi "Có quét virus không?"
+                    token = None
+                    for key, value in response.cookies.items():
+                        if key.startswith('download_warning'):
+                            token = value
+                            break
+                    if token:
+                        url_with_token = f"https://drive.google.com/uc?id={file_id}&export=download&confirm={token}"
+                        response = session.get(url_with_token, stream=True)
                     
                     if response.status_code == 200:
                         file_bytes = io.BytesIO(response.content)
                         success = False
                         
-                        # Thử đọc như PDF
                         try:
                             reader = PyPDF2.PdfReader(file_bytes)
                             extracted_text = ""
                             for page in reader.pages:
                                 extracted_text += page.extract_text() or ""
                                 if len(extracted_text) > 15000: break
-                            pdf_text += f"\n\n[DỮ LIỆU DRIVE - PDF]:\n" + extracted_text[:15000]
-                            st.success("✅ Đã kéo xong PDF từ Drive!")
-                            success = True
+                            if extracted_text.strip():
+                                pdf_text += f"\n\n[DỮ LIỆU DRIVE - PDF]:\n" + extracted_text[:15000]
+                                st.success("✅ Đã kéo xong PDF từ Drive!")
+                                success = True
                         except: pass
                         
-                        # Thử đọc như PPTX nếu không phải PDF
                         if not success:
                             try:
-                                file_bytes.seek(0) # Reset con trỏ file
+                                file_bytes.seek(0)
                                 prs = Presentation(file_bytes)
                                 extracted_text = ""
                                 for slide in prs.slides:
@@ -190,12 +202,12 @@ with st.sidebar:
                                         if hasattr(shape, "text"):
                                             extracted_text += shape.text + "\n"
                                     if len(extracted_text) > 15000: break
-                                pdf_text += f"\n\n[DỮ LIỆU DRIVE - PPTX]:\n" + extracted_text[:15000]
-                                st.success("✅ Đã bóc tách thành công Text từ Slide PPTX trên Drive!")
-                                success = True
+                                if extracted_text.strip():
+                                    pdf_text += f"\n\n[DỮ LIỆU DRIVE - PPTX]:\n" + extracted_text[:15000]
+                                    st.success("✅ Đã bóc tách thành công Text từ Slide PPTX trên Drive!")
+                                    success = True
                             except: pass
 
-                        # Thử đọc như Hình ảnh nếu cả 2 cái trên đều thất bại
                         if not success:
                             try:
                                 file_bytes.seek(0)
@@ -205,13 +217,13 @@ with st.sidebar:
                                 st.success("✅ Đã nạp xong Ảnh từ Drive!")
                                 success = True
                             except:
-                                st.error("❌ Định dạng không hỗ trợ hoặc file quá nặng. Hãy kiểm tra lại.")
+                                st.error("❌ Link trỏ đến Google Slides gốc (chứ không phải file tải lên). Hãy lưu sang đuôi PDF rồi gửi link lại nhé!")
                     else:
-                        st.error("❌ Không thể tải! Bạn nhớ bật quyền 'Bất kỳ ai có liên kết' nhé.")
+                        st.error(f"❌ Mã lỗi: {response.status_code}. Hãy check lại quyền truy cập!")
             else:
-                st.warning("⚠️ Link chưa đúng định dạng. Hãy copy lại từ Google Drive.")
+                st.warning("⚠️ Link chưa đúng định dạng. Bạn thử copy lại nhé.")
         except Exception as e:
-            st.error(f"Lỗi hệ thống kéo file: {e}")
+            st.error(f"Lỗi hệ thống: {e}")
 
     st.markdown("---")
     if st.button("🔄 Ép Đồng Bộ Lên Cloud Ngay"):
@@ -235,7 +247,6 @@ if st.session_state.current_page == "💬 Chat Mentor":
         if api_key:
             genai.configure(api_key=api_key)
             
-            # --- LUỒNG A: TẠO TRẮC NGHIỆM ---
             if any(kw in user_input.lower() for kw in ["trắc nghiệm", "câu hỏi", "test", "đề thi"]):
                 model = genai.GenerativeModel(model_name=model_choice, generation_config={"response_mime_type": "application/json"})
                 schema_instruction = (
@@ -268,9 +279,8 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         st.session_state.current_page = "📝 Phòng Thi Ảo"
                         st.rerun() 
                     except Exception as e:
-                        st.error(f"Lỗi hệ thống: Quota hoặc AI đang quá tải. Đợi 1 chút nhé!")
+                        st.error(f"Lỗi AI: Đợi xíu rồi thử lại nha!")
             
-            # --- LUỒNG B: CHAT & TÓM TẮT ---
             else:
                 model = genai.GenerativeModel(model_choice)
                 
@@ -296,7 +306,7 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         st.session_state.last_summary = response.text
                         st.rerun() 
                     except Exception as e:
-                        st.error(f"Lỗi AI: Đợi 1 chút rồi thử lại nhé!")
+                        st.error(f"Lỗi thật sự: {e}")
         else:
             st.warning("Nhớ nhập API Key nhé Thành Phát!")
 
@@ -352,6 +362,6 @@ elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
 # --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
 st.markdown("""
     <div class="footer">
-        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản PowerPoint Reader v6.0</p>
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Ultimate Drive v6.1</p>
     </div>
 """, unsafe_allow_html=True)
