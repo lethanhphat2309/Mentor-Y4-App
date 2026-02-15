@@ -59,6 +59,7 @@ if "data_loaded" not in st.session_state:
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
+    st.session_state.last_summary = "" # MỚI: Bộ nhớ lưu bài tóm tắt để tải về
     st.session_state.data_loaded = True 
     
     if sheet_db:
@@ -89,12 +90,14 @@ def sync_to_cloud():
 # --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI & XỬ LÝ ĐA TỆP ---
 with st.sidebar:
     st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
-    st.caption("Phiên bản Y4 - Multi-Vision v3.1")
+    st.caption("Phiên bản Y4 - Multi-Vision v4.0")
     st.markdown("---")
     
     st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
-    model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-pro-latest"])
+    
+    # MỚI: Đã đẩy mô hình 3.0 flash lên vị trí mặc định đầu tiên
+    model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-3.0-flash", "gemini-3.0-pro", "gemini-3-flash-preview", "gemini-1.5-pro-latest"])
     
     st.markdown("---")
     menu_options = ["💬 Chat Mentor", "📝 Phòng Thi Ảo", "📓 Sổ Tay Câu Sai"]
@@ -103,11 +106,10 @@ with st.sidebar:
         st.session_state.current_page = selected_page
         st.rerun()
     
-    # CÔNG TẮC ĐA TỆP (accept_multiple_files=True)
     uploaded_files = st.file_uploader("📸 Tải cùng lúc NHIỀU ẢNH hoặc PDF", type=["pdf", "txt", "png", "jpg", "jpeg"], accept_multiple_files=True)
     
     pdf_text = ""
-    img_data_list = [] # Danh sách chứa nhiều ảnh
+    img_data_list = [] 
     
     if uploaded_files:
         for file in uploaded_files:
@@ -133,14 +135,16 @@ with st.sidebar:
         st.success("Đã lưu an toàn lên Cloud!")
 
 # ==========================================
-# CHẾ ĐỘ 1: CHAT MENTOR (MULTI-VISION)
+# CHẾ ĐỘ 1: CHAT MENTOR (MULTI-VISION & XUẤT FILE)
 # ==========================================
 if st.session_state.current_page == "💬 Chat Mentor":
+    # 1. Hiển thị lại lịch sử chat
     for msg in st.session_state.messages:
         with st.chat_message("ai" if msg["role"] == "model" else "user"):
             st.markdown(msg["parts"][0], unsafe_allow_html=True)
 
-    user_input = st.chat_input("Nhắn Mentor (VD: Tạo 10 câu trắc nghiệm từ các ảnh này)")
+    # 2. Ô nhập liệu
+    user_input = st.chat_input("Nhắn Mentor (VD: Tóm tắt bài này cho mình)")
 
     if user_input:
         st.chat_message("user").write(user_input)
@@ -149,10 +153,11 @@ if st.session_state.current_page == "💬 Chat Mentor":
         if api_key:
             genai.configure(api_key=api_key)
             
+            # --- LUỒNG A: TẠO TRẮC NGHIỆM ---
             if any(kw in user_input.lower() for kw in ["trắc nghiệm", "câu hỏi", "test", "đề thi"]):
                 model = genai.GenerativeModel(model_name=model_choice, generation_config={"response_mime_type": "application/json"})
                 schema_instruction = (
-                    "Bạn là Mentor Y Khoa. Dựa vào toàn bộ nội dung văn bản và tất cả các hình ảnh được cung cấp, hãy tạo MẢNG JSON chứa trắc nghiệm:\n"
+                    "Bạn là Mentor Y Khoa. Dựa vào nội dung, hãy tạo MẢNG JSON chứa trắc nghiệm:\n"
                     "[\n"
                     "  {\n"
                     "    \"question\": \"Câu hỏi...\",\n"
@@ -164,12 +169,10 @@ if st.session_state.current_page == "💬 Chat Mentor":
                     "TUYỆT ĐỐI KHÔNG để dấu phẩy (,) ở cuối phần tử cuối cùng."
                 )
                 
-                # Nạp chung lời nhắc, chữ (nếu có) và TẤT CẢ các ảnh vào não AI
-                prompt_parts = [schema_instruction + pdf_text + "\n\nYêu cầu tạo test: " + user_input]
-                if img_data_list:
-                    prompt_parts.extend(img_data_list)
+                prompt_parts = [schema_instruction + pdf_text + "\n\nYêu cầu: " + user_input]
+                if img_data_list: prompt_parts.extend(img_data_list)
                     
-                with st.spinner("Mắt thần đang quét đồng loạt các ảnh để soạn đề..."):
+                with st.spinner("Đang soạn đề thi..."):
                     try:
                         response = model.generate_content(prompt_parts)
                         clean_json = re.sub(r',\s*]', ']', response.text)
@@ -179,69 +182,42 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         st.session_state.quiz_data.extend(new_questions)
                         sync_to_cloud() 
                         
-                        st.session_state.messages.append({"role": "model", "parts": [f"Đã quét xong {len(img_data_list)} ảnh! Nạp thêm {len(new_questions)} câu hỏi vào Ngân Hàng Đề!"]})
+                        st.session_state.messages.append({"role": "model", "parts": [f"Đã nạp thêm {len(new_questions)} câu hỏi vào Ngân Hàng Đề!"]})
                         st.session_state.current_page = "📝 Phòng Thi Ảo"
                         st.rerun() 
                     except Exception as e:
-                        st.error(f"Lỗi AI: Bạn tải nhiều ảnh quá nên bộ não AI hơi ngộp. Hãy đợi 30 giây rồi thử lại nhé!")
+                        st.error(f"Lỗi AI Quota. Đợi 30 giây rồi thử lại nhé!")
+            
+            # --- LUỒNG B: CHAT VÀ TÓM TẮT BÀI HỌC (MỚI) ---
             else:
                 model = genai.GenerativeModel(model_choice)
-                prompt_parts = ["Bạn là Mentor Y Khoa. Phân tích chuỗi tài liệu/hình ảnh sau để trả lời." + pdf_text + "\n\n" + user_input]
-                if img_data_list:
-                    prompt_parts.extend(img_data_list)
+                
+                # MỚI: Cài đặt lệnh "Ép" AI trình bày đẹp như giáo án
+                format_instruction = (
+                    "Bạn là Trưởng khoa Y. Hãy giải thích hoặc tóm tắt tài liệu một cách SÚC TÍCH, DỄ HIỂU. "
+                    "BẮT BUỘC trình bày chuẩn Markdown: "
+                    "1. Dùng Tiêu đề lớn (##) cho các phần chính. "
+                    "2. Dùng gạch đầu dòng (-) rõ ràng. "
+                    "3. BÔI ĐẬM (**) các từ khóa y khoa, tên thuốc, triệu chứng quan trọng. "
+                    "4. Cấu trúc mạch lạc để sinh viên y dễ học thuộc."
+                )
+                
+                prompt_parts = [format_instruction + "\n\nNội dung tài liệu:\n" + pdf_text + "\n\nYêu cầu của người dùng: " + user_input]
+                if img_data_list: prompt_parts.extend(img_data_list)
                     
-                with st.spinner("Mentor đang phân tích chuỗi hình ảnh..."):
+                with st.spinner("Mentor đang soạn bài giảng tóm tắt siêu đẹp..."):
                     try:
                         response = model.generate_content(prompt_parts)
                         st.chat_message("ai").markdown(response.text)
                         st.session_state.messages.append({"role": "model", "parts": [response.text]})
+                        
+                        # MỚI: Lưu lại bài tóm tắt vào bộ nhớ để tải về
+                        st.session_state.last_summary = response.text
+                        st.rerun() # Tải lại trang để hiện nút Download
                     except:
                         st.error("Lỗi Quota: Hãy chờ 1 chút hoặc đổi sang AI khác nhé!")
         else:
             st.warning("Nhớ nhập API Key nhé Thành Phát!")
 
-# ==========================================
-# CHẾ ĐỘ 2 & 3: GIỮ NGUYÊN (PHÒNG THI VÀ SỔ TAY CÂU SAI)
-# ==========================================
-elif st.session_state.current_page == "📝 Phòng Thi Ảo":
-    st.subheader(f"📝 Ngân Hàng Đề Thi Cloud ({len(st.session_state.quiz_data)} câu)")
-    if len(st.session_state.quiz_data) == 0:
-        st.info("Chưa có câu hỏi. Hãy về tab Chat Mentor yêu cầu tạo trắc nghiệm.")
-    else:
-        if st.button("🎲 Xáo Trộn Đề (Ôn Tập Ngẫu Nhiên)"):
-            random.shuffle(st.session_state.quiz_data)
-            st.rerun()
-        st.markdown("---")
-        for idx, q in enumerate(st.session_state.quiz_data):
-            st.markdown(f"**Câu {idx+1}: {q['question']}**")
-            choice = st.radio("Chọn đáp án:", q['options'], key=f"radio_{idx}", index=None)
-            if st.button(f"Nộp đáp án Câu {idx+1}", key=f"btn_{idx}"):
-                if choice is None:
-                    st.warning("Chưa chọn đáp án kìa!")
-                elif choice == q['answer']:
-                    st.success(f"🎉 ĐÚNG RỒI! \n\n**Giải thích sâu:** {q['explanation']}")
-                    st.balloons()
-                else:
-                    st.error(f"❌ SAI RỒI! \n\n**Đáp án đúng:** {q['answer']} \n\n**Giải thích sâu:** {q['explanation']}")
-                    if not any(item['question'] == q['question'] for item in st.session_state.wrong_notebook):
-                        st.session_state.wrong_notebook.append(q)
-                        sync_to_cloud() 
-            st.markdown("---")
-
-elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
-    st.subheader("📓 Góc Ôn Tập Của Thành Phát")
-    if len(st.session_state.wrong_notebook) == 0:
-        st.success("Tuyệt vời! Bạn chưa làm sai câu nào.")
-    else:
-        st.warning(f"Có {len(st.session_state.wrong_notebook)} câu cần ôn lại:")
-        for idx, wq in enumerate(st.session_state.wrong_notebook):
-            with st.expander(f"⚠️ {wq['question']}"):
-                st.error(f"**Đáp án đúng:** {wq['answer']}")
-                st.info(f"**Cơ chế bệnh sinh:** {wq['explanation']}")
-
-# --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
-st.markdown("""
-    <div class="footer">
-        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Multi-Vision v3.1</p>
-    </div>
-""", unsafe_allow_html=True)
+    # 3. MỚI: NÚT TẢI BÀI TÓM TẮT (Nằm ở dưới cùng khu vực chat)
+    if st.session_state.last_summary:
