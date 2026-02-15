@@ -24,17 +24,15 @@ st.caption("☁️ Đã kích hoạt công nghệ Đồng Bộ Đám Mây (Googl
 @st.cache_resource
 def init_gsheets():
     try:
-        # Mở két sắt Streamlit lấy chìa khóa
         creds_json = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
         client = gspread.authorize(creds)
-        return client.open("Mentor_Y4_Database") # Mở file Excel của Phát
+        return client.open("Mentor_Y4_Database") 
     except Exception as e:
-        st.error("Chưa kết nối được Cloud. Phát kiểm tra lại Bước 1 (Secrets) nhé!")
+        # DÒNG NÀY SẼ ÉP APP IN RA LỖI THẬT SỰ BẰNG TIẾNG ANH
+        st.error(f"🚨 Lỗi thật sự là: {e}") 
         return None
-
-sheet_db = init_gsheets()
 
 # --- 3. BỘ NHỚ HỆ THỐNG & TỰ ĐỘNG TẢI DỮ LIỆU ---
 if "data_loaded" not in st.session_state:
