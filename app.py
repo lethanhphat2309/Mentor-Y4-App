@@ -90,13 +90,11 @@ def sync_to_cloud():
 # --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI & XỬ LÝ ĐA TỆP ---
 with st.sidebar:
     st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
-    st.caption("Phiên bản Y4 - Multi-Vision v4.1")
+    st.caption("Phiên bản Y4 - Smart Logic v4.2")
     st.markdown("---")
     
     st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
-    
-    # MỚI: Đặt gemini-3-flash-preview lên vị trí số 1 theo ý chủ tịch
     model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-3-flash-preview", "gemini-3.0-flash", "gemini-3.0-pro", "gemini-1.5-pro-latest"])
     
     st.markdown("---")
@@ -118,7 +116,6 @@ with st.sidebar:
                 try:
                     reader = PyPDF2.PdfReader(file)
                     extracted_text = ""
-                    # MỚI: Tối ưu đọc PDF nặng, tự ngắt để chống treo máy
                     for page in reader.pages:
                         extracted_text += page.extract_text() or ""
                         if len(extracted_text) > 15000:
@@ -141,14 +138,14 @@ with st.sidebar:
         st.success("Đã lưu an toàn lên Cloud!")
 
 # ==========================================
-# CHẾ ĐỘ 1: CHAT MENTOR (MULTI-VISION & XUẤT FILE)
+# CHẾ ĐỘ 1: CHAT MENTOR (THÔNG MINH HƠN)
 # ==========================================
 if st.session_state.current_page == "💬 Chat Mentor":
     for msg in st.session_state.messages:
         with st.chat_message("ai" if msg["role"] == "model" else "user"):
             st.markdown(msg["parts"][0], unsafe_allow_html=True)
 
-    user_input = st.chat_input("Nhắn Mentor (VD: Tóm tắt bài này cho mình)")
+    user_input = st.chat_input("Nhắn Mentor (VD: Tóm tắt bài này / Trình bày chi tiết bài này)")
 
     if user_input:
         st.chat_message("user").write(user_input)
@@ -192,23 +189,25 @@ if st.session_state.current_page == "💬 Chat Mentor":
                     except Exception as e:
                         st.error(f"Lỗi AI Quota. Đợi 30 giây rồi thử lại nhé!")
             
-            # --- LUỒNG B: CHAT VÀ TÓM TẮT BÀI HỌC ---
+            # --- LUỒNG B: CHAT, TÓM TẮT & PHÂN TÍCH SÂU (MỚI) ---
             else:
                 model = genai.GenerativeModel(model_choice)
                 
+                # MỚI: Chỉ ép định dạng đẹp, còn độ sâu là tùy người dùng
                 format_instruction = (
-                    "Bạn là Trưởng khoa Y. Hãy giải thích hoặc tóm tắt tài liệu một cách SÚC TÍCH, DỄ HIỂU. "
-                    "BẮT BUỘC trình bày chuẩn Markdown: "
+                    "Bạn là Trưởng khoa Y. Tùy thuộc vào yêu cầu của người dùng (tóm tắt ý chính HOẶC trình bày chi tiết đầy đủ), "
+                    "hãy đáp ứng chính xác về mặt nội dung. "
+                    "TUY NHIÊN, DÙ LÀ TÓM TẮT HAY CHI TIẾT, BẮT BUỘC phải trình bày chuẩn Markdown: "
                     "1. Dùng Tiêu đề lớn (##) cho các phần chính. "
                     "2. Dùng gạch đầu dòng (-) rõ ràng. "
                     "3. BÔI ĐẬM (**) các từ khóa y khoa, tên thuốc, triệu chứng quan trọng. "
-                    "4. Cấu trúc mạch lạc để sinh viên y dễ học thuộc."
+                    "4. Cấu trúc mạch lạc, trực quan."
                 )
                 
                 prompt_parts = [format_instruction + "\n\nNội dung tài liệu:\n" + pdf_text + "\n\nYêu cầu của người dùng: " + user_input]
                 if img_data_list: prompt_parts.extend(img_data_list)
                     
-                with st.spinner("Mentor đang soạn bài giảng tóm tắt siêu đẹp..."):
+                with st.spinner("Mentor đang đọc và phân tích tài liệu theo ý Thành Phát..."):
                     try:
                         response = model.generate_content(prompt_parts)
                         st.chat_message("ai").markdown(response.text)
@@ -226,9 +225,9 @@ if st.session_state.current_page == "💬 Chat Mentor":
         st.download_button(
             label="📥 Tải bài Tóm tắt/Giải thích vừa rồi về máy",
             data=st.session_state.last_summary,
-            file_name="Tom_Tat_Y_Khoa_ThanhPhat.md",
+            file_name="Giao_An_Y_Khoa_ThanhPhat.md",
             mime="text/markdown",
-            help="Bấm để tải file. Mẹo: Hãy mở file này bằng Google Docs hoặc Notion, nó sẽ tự động nhận diện chữ in đậm và gạch đầu dòng cực đẹp!"
+            help="Bấm để tải file. Mở bằng Google Docs hoặc Notion để giữ nguyên định dạng in đậm và gạch đầu dòng cực đẹp!"
         )
 
 # ==========================================
@@ -273,6 +272,6 @@ elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
 # --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
 st.markdown("""
     <div class="footer">
-        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Flash Preview & Tối ưu Big Data</p>
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Smart Logic v4.2</p>
     </div>
 """, unsafe_allow_html=True)
