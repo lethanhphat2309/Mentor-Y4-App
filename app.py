@@ -51,11 +51,11 @@ def parse_sheet_data(worksheet):
                 "explanation": str(row.get("GIẢI THÍCH", row.get("Giải thích", "")))
             })
         return data
-    except:
+    except Exception:
         return []
 
 if "data_loaded" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Cứ kéo thả nhiều ảnh hoặc PDF vào đây một lúc, mình cân được hết!"]}]
+    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý AI đã được sửa lỗi báo động giả. Cứ yên tâm học nhé!"]}]
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
@@ -66,7 +66,7 @@ if "data_loaded" not in st.session_state:
         try:
             st.session_state.quiz_data = parse_sheet_data(sheet_db.worksheet("QuizBank"))
             st.session_state.wrong_notebook = parse_sheet_data(sheet_db.worksheet("WrongNotebook"))
-        except: pass 
+        except Exception: pass 
 
 def format_for_sheet(data_list):
     rows = [["CÂU HỎI", "CÁC ĐÁP ÁN", "ĐÁP ÁN ĐÚNG", "GIẢI THÍCH"]]
@@ -85,12 +85,12 @@ def sync_to_cloud():
             wrong_ws = sheet_db.worksheet("WrongNotebook")
             wrong_ws.clear()
             wrong_ws.update(format_for_sheet(st.session_state.wrong_notebook))
-        except: pass
+        except Exception: pass
 
 # --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI & XỬ LÝ ĐA TỆP ---
 with st.sidebar:
     st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
-    st.caption("Phiên bản Y4 - Smart Logic v4.2")
+    st.caption("Phiên bản Y4 - Fix Bug v4.3")
     st.markdown("---")
     
     st.header("⚙️ Hệ Thống")
@@ -121,13 +121,13 @@ with st.sidebar:
                         if len(extracted_text) > 15000:
                             break
                     pdf_text += f"\n\n[DỮ LIỆU SÁCH]:\n" + extracted_text[:15000]
-                except: pass
+                except Exception: pass
             elif file_ext in ['png', 'jpg', 'jpeg']:
                 try:
                     img = Image.open(file)
                     img_data_list.append(img)
                     st.image(img, caption=f"Đã nạp: {file.name}", use_container_width=True)
-                except: pass
+                except Exception: pass
         
         if pdf_text or img_data_list:
             st.success(f"🎉 Đã nạp thành công tài liệu vào Mắt AI!")
@@ -138,7 +138,7 @@ with st.sidebar:
         st.success("Đã lưu an toàn lên Cloud!")
 
 # ==========================================
-# CHẾ ĐỘ 1: CHAT MENTOR (THÔNG MINH HƠN)
+# CHẾ ĐỘ 1: CHAT MENTOR (ĐÃ FIX LỖI FALSE ALARM)
 # ==========================================
 if st.session_state.current_page == "💬 Chat Mentor":
     for msg in st.session_state.messages:
@@ -187,17 +187,16 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         st.session_state.current_page = "📝 Phòng Thi Ảo"
                         st.rerun() 
                     except Exception as e:
-                        st.error(f"Lỗi AI Quota. Đợi 30 giây rồi thử lại nhé!")
+                        st.error(f"Lỗi hệ thống: {e}")
             
-            # --- LUỒNG B: CHAT, TÓM TẮT & PHÂN TÍCH SÂU (MỚI) ---
+            # --- LUỒNG B: CHAT & TÓM TẮT ---
             else:
                 model = genai.GenerativeModel(model_choice)
                 
-                # MỚI: Chỉ ép định dạng đẹp, còn độ sâu là tùy người dùng
                 format_instruction = (
-                    "Bạn là Trưởng khoa Y. Tùy thuộc vào yêu cầu của người dùng (tóm tắt ý chính HOẶC trình bày chi tiết đầy đủ), "
+                    "Bạn là Trưởng khoa Y. Tùy thuộc vào yêu cầu của người dùng, "
                     "hãy đáp ứng chính xác về mặt nội dung. "
-                    "TUY NHIÊN, DÙ LÀ TÓM TẮT HAY CHI TIẾT, BẮT BUỘC phải trình bày chuẩn Markdown: "
+                    "BẮT BUỘC phải trình bày chuẩn Markdown: "
                     "1. Dùng Tiêu đề lớn (##) cho các phần chính. "
                     "2. Dùng gạch đầu dòng (-) rõ ràng. "
                     "3. BÔI ĐẬM (**) các từ khóa y khoa, tên thuốc, triệu chứng quan trọng. "
@@ -215,8 +214,8 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         
                         st.session_state.last_summary = response.text
                         st.rerun() 
-                    except:
-                        st.error("Lỗi Quota: Hãy chờ 1 chút hoặc đổi sang AI khác nhé!")
+                    except Exception as e:
+                        st.error(f"Lỗi thật sự: {e}")
         else:
             st.warning("Nhớ nhập API Key nhé Thành Phát!")
 
@@ -272,6 +271,6 @@ elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
 # --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
 st.markdown("""
     <div class="footer">
-        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Smart Logic v4.2</p>
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Fix Bug v4.3</p>
     </div>
 """, unsafe_allow_html=True)
