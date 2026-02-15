@@ -221,3 +221,57 @@ if st.session_state.current_page == "💬 Chat Mentor":
 
     # 3. MỚI: NÚT TẢI BÀI TÓM TẮT (Nằm ở dưới cùng khu vực chat)
     if st.session_state.last_summary:
+        st.markdown("---")
+        st.download_button(
+            label="📥 Tải bài Tóm tắt/Giải thích vừa rồi về máy",
+            data=st.session_state.last_summary,
+            file_name="Tom_Tat_Y_Khoa_ThanhPhat.md",
+            mime="text/markdown",
+            help="Bấm để tải file. Mẹo: Hãy mở file này bằng Google Docs hoặc Notion, nó sẽ tự động nhận diện chữ in đậm và gạch đầu dòng cực đẹp!"
+        )
+
+# ==========================================
+# CHẾ ĐỘ 2 & 3: GIỮ NGUYÊN
+# ==========================================
+elif st.session_state.current_page == "📝 Phòng Thi Ảo":
+    st.subheader(f"📝 Ngân Hàng Đề Thi Cloud ({len(st.session_state.quiz_data)} câu)")
+    if len(st.session_state.quiz_data) == 0:
+        st.info("Chưa có câu hỏi. Hãy về tab Chat Mentor yêu cầu tạo trắc nghiệm.")
+    else:
+        if st.button("🎲 Xáo Trộn Đề (Ôn Tập Ngẫu Nhiên)"):
+            random.shuffle(st.session_state.quiz_data)
+            st.rerun()
+        st.markdown("---")
+        for idx, q in enumerate(st.session_state.quiz_data):
+            st.markdown(f"**Câu {idx+1}: {q['question']}**")
+            choice = st.radio("Chọn đáp án:", q['options'], key=f"radio_{idx}", index=None)
+            if st.button(f"Nộp đáp án Câu {idx+1}", key=f"btn_{idx}"):
+                if choice is None:
+                    st.warning("Chưa chọn đáp án kìa!")
+                elif choice == q['answer']:
+                    st.success(f"🎉 ĐÚNG RỒI! \n\n**Giải thích sâu:** {q['explanation']}")
+                    st.balloons()
+                else:
+                    st.error(f"❌ SAI RỒI! \n\n**Đáp án đúng:** {q['answer']} \n\n**Giải thích sâu:** {q['explanation']}")
+                    if not any(item['question'] == q['question'] for item in st.session_state.wrong_notebook):
+                        st.session_state.wrong_notebook.append(q)
+                        sync_to_cloud() 
+            st.markdown("---")
+
+elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
+    st.subheader("📓 Góc Ôn Tập Của Thành Phát")
+    if len(st.session_state.wrong_notebook) == 0:
+        st.success("Tuyệt vời! Bạn chưa làm sai câu nào.")
+    else:
+        st.warning(f"Có {len(st.session_state.wrong_notebook)} câu cần ôn lại:")
+        for idx, wq in enumerate(st.session_state.wrong_notebook):
+            with st.expander(f"⚠️ {wq['question']}"):
+                st.error(f"**Đáp án đúng:** {wq['answer']}")
+                st.info(f"**Cơ chế bệnh sinh:** {wq['explanation']}")
+
+# --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
+st.markdown("""
+    <div class="footer">
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản 3.0 Flash & Auto-Export</p>
+    </div>
+""", unsafe_allow_html=True)
