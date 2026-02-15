@@ -30,9 +30,12 @@ def init_gsheets():
         client = gspread.authorize(creds)
         return client.open("Mentor_Y4_Database") 
     except Exception as e:
-        # DÒNG NÀY SẼ ÉP APP IN RA LỖI THẬT SỰ BẰNG TIẾNG ANH
+        # Máy phát hiện nói dối
         st.error(f"🚨 Lỗi thật sự là: {e}") 
         return None
+
+# DÒNG NÀY LÚC NÃY MÌNH QUÊN ĐƯA CHO BẠN NÈ:
+sheet_db = init_gsheets()
 
 # --- 3. BỘ NHỚ HỆ THỐNG & TỰ ĐỘNG TẢI DỮ LIỆU ---
 if "data_loaded" not in st.session_state:
