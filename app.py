@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 import json
-import re # <-- MỚI: Thêm thư viện dọn dẹp chuỗi siêu mạnh
+import re
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Mentor Y4 - Tương Tác", page_icon="👨‍⚕️", layout="centered")
@@ -23,8 +23,10 @@ if "quiz_data" not in st.session_state:
     st.session_state.quiz_data = []
 if "wrong_notebook" not in st.session_state:
     st.session_state.wrong_notebook = []
-if "nav_menu" not in st.session_state:
-    st.session_state.nav_menu = "💬 Chat Mentor" 
+
+# MỚI: Biến lưu trữ trang hiện tại (Không gắn trực tiếp vào Key của Widget nữa)
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "💬 Chat Mentor"
 
 # --- 3. THANH ĐIỀU HƯỚNG BÊN TRÁI ---
 with st.sidebar:
@@ -33,9 +35,19 @@ with st.sidebar:
     model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-1.5-pro-latest"])
     
     st.markdown("---")
-    st.radio("📌 Điều Hướng Ứng Dụng", 
-             ["💬 Chat Mentor", "📝 Phòng Thi Ảo", "📓 Sổ Tay Câu Sai"], 
-             key="nav_menu")
+    
+    # MỚI: Menu an toàn, không bị lỗi xung đột
+    menu_options = ["💬 Chat Mentor", "📝 Phòng Thi Ảo", "📓 Sổ Tay Câu Sai"]
+    selected_page = st.radio(
+        "📌 Điều Hướng Ứng Dụng", 
+        menu_options, 
+        index=menu_options.index(st.session_state.current_page)
+    )
+    
+    # Nếu Phát tự bấm đổi trang ở menu thì App sẽ load lại trang đó
+    if selected_page != st.session_state.current_page:
+        st.session_state.current_page = selected_page
+        st.rerun()
     
     uploaded_file = st.file_uploader("Tải tài liệu PDF", type=["pdf", "txt"])
     if st.button("🗑️ Xóa Sổ Tay Câu Sai"):
@@ -53,12 +65,12 @@ if uploaded_file is not None:
 # ==========================================
 # CHẾ ĐỘ 1: CHAT MENTOR
 # ==========================================
-if st.session_state.nav_menu == "💬 Chat Mentor":
+if st.session_state.current_page == "💬 Chat Mentor":
     for msg in st.session_state.messages:
         with st.chat_message("ai" if msg["role"] == "model" else "user"):
             st.markdown(msg["parts"][0], unsafe_allow_html=True)
 
-    user_input = st.chat_input("Nhắn Mentor (VD: Tạo 5 câu trắc nghiệm bài này)")
+    user_input = st.chat_input("Nhắn Mentor (VD: Tạo 5 câu trắc nghiệm)")
 
     if user_input:
         st.chat_message("user").write(user_input)
@@ -67,13 +79,13 @@ if st.session_state.nav_menu == "💬 Chat Mentor":
         if api_key:
             genai.configure(api_key=api_key)
             
+            # Kích hoạt Tạo Trắc Nghiệm JSON
             if any(kw in user_input.lower() for kw in ["trắc nghiệm", "câu hỏi", "test", "đề thi"]):
                 model = genai.GenerativeModel(
                     model_name=model_choice,
                     generation_config={"response_mime_type": "application/json"}
                 )
                 
-                # Lệnh hệ thống nghiêm ngặt hơn
                 schema_instruction = (
                     "Bạn là Mentor Y Khoa. Trả về một MẢNG JSON chứa các câu hỏi trắc nghiệm. Định dạng BẮT BUỘC:\n"
                     "[\n"
@@ -84,27 +96,30 @@ if st.session_state.nav_menu == "💬 Chat Mentor":
                     "    \"explanation\": \"Giải thích cơ chế y khoa thật chi tiết...\"\n"
                     "  }\n"
                     "]\n"
-                    "CẢNH BÁO: TUYỆT ĐỐI KHÔNG để dấu phẩy (,) ở cuối phần tử cuối cùng của mảng. Trả về chuẩn JSON 100%."
+                    "CẢNH BÁO: TUYỆT ĐỐI KHÔNG để dấu phẩy (,) ở cuối phần tử cuối cùng của mảng."
                 )
                 full_prompt = schema_instruction + pdf_text + "\n\nYêu cầu tạo test: " + user_input
                 
-                with st.spinner("Đang lên đề thi và chuẩn bị chuyển bạn vào Phòng Thi Ảo..."):
+                with st.spinner("Đang lên đề thi và chuyển bạn vào Phòng Thi Ảo..."):
                     try:
                         response = model.generate_content(full_prompt)
                         
-                        # CÔNG NGHỆ CHỐNG LỖI TẠI ĐÂY
+                        # Dọn dẹp lỗi JSON dư dấu phẩy
                         raw_json = response.text
-                        clean_json = re.sub(r',\s*]', ']', raw_json) # Xóa dấu phẩy thừa trước ngoặc vuông
-                        clean_json = re.sub(r',\s*}', '}', clean_json) # Xóa dấu phẩy thừa trước ngoặc nhọn
+                        clean_json = re.sub(r',\s*]', ']', raw_json)
+                        clean_json = re.sub(r',\s*}', '}', clean_json)
                         
                         st.session_state.quiz_data = json.loads(clean_json)
                         st.session_state.messages.append({"role": "model", "parts": ["Đã chuẩn bị xong đề thi!"]})
-                        st.session_state.nav_menu = "📝 Phòng Thi Ảo"
+                        
+                        # NHẢY TRANG AN TOÀN TẠI ĐÂY
+                        st.session_state.current_page = "📝 Phòng Thi Ảo"
                         st.rerun() 
                         
                     except Exception as e:
-                        st.error(f"Lỗi hệ thống. Phát thử gửi lại yêu cầu nhé! Lỗi chi tiết: {e}")
+                        st.error(f"Lỗi tạo đề thi. Phát thử nhắn lại nhé! Lỗi chi tiết: {e}")
             
+            # Chat bình thường
             else:
                 model = genai.GenerativeModel(model_choice)
                 full_prompt = "Bạn là Mentor Y Khoa. Trình bày rõ ràng." + pdf_text + "\n\n" + user_input
@@ -118,7 +133,7 @@ if st.session_state.nav_menu == "💬 Chat Mentor":
 # ==========================================
 # CHẾ ĐỘ 2: PHÒNG THI ẢO 
 # ==========================================
-elif st.session_state.nav_menu == "📝 Phòng Thi Ảo":
+elif st.session_state.current_page == "📝 Phòng Thi Ảo":
     st.subheader("📝 Bài Kiểm Tra Tương Tác")
     if len(st.session_state.quiz_data) == 0:
         st.info("Chưa có câu hỏi. Phát hãy quay lại 'Chat Mentor' và gõ 'Tạo trắc nghiệm' nhé.")
@@ -142,7 +157,7 @@ elif st.session_state.nav_menu == "📝 Phòng Thi Ảo":
 # ==========================================
 # CHẾ ĐỘ 3: SỔ TAY CÂU SAI
 # ==========================================
-elif st.session_state.nav_menu == "📓 Sổ Tay Câu Sai":
+elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
     st.subheader("📓 Góc Ôn Tập Của Phát")
     if len(st.session_state.wrong_notebook) == 0:
         st.success("Tuyệt vời! Bạn chưa làm sai câu nào (hoặc chưa làm bài test).")
