@@ -7,18 +7,42 @@ import random
 import gspread 
 from google.oauth2.service_account import Credentials 
 
-# --- 1. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="Mentor Y4 - Cloud Sync", page_icon="👨‍⚕️", layout="centered")
+# --- 1. CẤU HÌNH GIAO DIỆN & BẢN QUYỀN THÀNH PHÁT ---
+st.set_page_config(page_title="Mentor Y4 - Thành Phát", page_icon="👨‍⚕️", layout="centered")
 
+# CSS: Giao diện Vàng Gold và Chân trang bản quyền
 st.markdown("""
     <style>
-    .stRadio > label { font-weight: bold; color: #4CAF50; font-size: 16px;}
-    .stButton>button { border-radius: 8px; border: 1px solid #4CAF50; width: 100%; margin-bottom: 10px;}
+    .stRadio > label { font-weight: bold; color: #D4AF37; font-size: 16px;}
+    .stButton>button { 
+        border-radius: 12px; 
+        border: 2px solid #D4AF37; 
+        color: #D4AF37;
+        background-color: transparent;
+        font-weight: bold;
+        transition: 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #D4AF37;
+        color: white;
+    }
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: transparent;
+        color: #888;
+        text-align: center;
+        font-size: 13px;
+        padding: 10px;
+        border-top: 1px solid #333;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("👨‍⚕️ Mentor Y Khoa Cá Nhân")
-st.caption("☁️ Đã kích hoạt công nghệ Đồng Bộ Đám Mây (Google Sheets)")
+st.caption("☁️ Hệ thống học tập thiết kế độc quyền cho **Thành Phát**")
 
 # --- 2. KẾT NỐI GOOGLE SHEETS BÍ MẬT ---
 @st.cache_resource
@@ -36,32 +60,29 @@ def init_gsheets():
 sheet_db = init_gsheets()
 
 # --- 3. BỘ NHỚ HỆ THỐNG & TỰ ĐỘNG TẢI DỮ LIỆU ---
-# Hàm đọc dữ liệu dạng Bảng từ Excel về App
 def parse_sheet_data(worksheet):
     try:
         records = worksheet.get_all_records()
         data = []
         for row in records:
-            # Tách các đáp án ra bằng dấu xuống dòng
-            options = [opt.strip() for opt in str(row.get("Các đáp án", "")).split("\n") if opt.strip()]
+            options = [opt.strip() for opt in str(row.get("CÁC ĐÁP ÁN", row.get("Các đáp án", ""))).split("\n") if opt.strip()]
             data.append({
-                "question": str(row.get("Câu hỏi", "")),
+                "question": str(row.get("CÂU HỎI", row.get("Câu hỏi", ""))),
                 "options": options,
-                "answer": str(row.get("Đáp án đúng", "")),
-                "explanation": str(row.get("Giải thích", ""))
+                "answer": str(row.get("ĐÁP ÁN ĐÚNG", row.get("Đáp án đúng", ""))),
+                "explanation": str(row.get("GIẢI THÍCH", row.get("Giải thích", "")))
             })
         return data
     except:
         return []
 
 if "data_loaded" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "parts": ["Chào Phát! Dữ liệu của bạn đã được bảo vệ trên Cloud!"]}]
+    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý y khoa của bạn đã sẵn sàng!"]}]
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
     st.session_state.data_loaded = True 
     
-    # Hút dữ liệu từ Bảng Excel về App
     if sheet_db:
         try:
             st.session_state.quiz_data = parse_sheet_data(sheet_db.worksheet("QuizBank"))
@@ -69,13 +90,12 @@ if "data_loaded" not in st.session_state:
         except:
             pass 
 
-# Hàm dàn trang và bơm dữ liệu lên Cloud
 def format_for_sheet(data_list):
-    # Tạo tiêu đề cột
-    rows = [["Câu hỏi", "Các đáp án", "Đáp án đúng", "Giải thích"]]
+    # Luôn đổ dữ liệu với tiêu đề in hoa cho đẹp
+    rows = [["CÂU HỎI", "CÁC ĐÁP ÁN", "ĐÁP ÁN ĐÚNG", "GIẢI THÍCH"]]
     if not data_list: return rows
     for item in data_list:
-        options_str = "\n".join(item['options']) # Gộp các đáp án lại, cách nhau bằng dấu xuống dòng
+        options_str = "\n".join(item['options']) 
         rows.append([item['question'], options_str, item['answer'], item['explanation']])
     return rows
 
@@ -83,8 +103,8 @@ def sync_to_cloud():
     if sheet_db:
         try:
             quiz_ws = sheet_db.worksheet("QuizBank")
-            quiz_ws.clear() # Xóa bảng cũ
-            quiz_ws.update(format_for_sheet(st.session_state.quiz_data)) # Điền bảng mới
+            quiz_ws.clear() 
+            quiz_ws.update(format_for_sheet(st.session_state.quiz_data)) 
             
             wrong_ws = sheet_db.worksheet("WrongNotebook")
             wrong_ws.clear()
@@ -94,6 +114,10 @@ def sync_to_cloud():
 
 # --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI ---
 with st.sidebar:
+    st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
+    st.caption("Phiên bản Y4 - Cloud Sync v2.0")
+    st.markdown("---")
+    
     st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
     model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-1.5-pro-latest"])
@@ -166,7 +190,7 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         new_questions = json.loads(clean_json)
                         
                         st.session_state.quiz_data.extend(new_questions)
-                        sync_to_cloud() # TỰ ĐỘNG ĐỒNG BỘ LÊN CLOUD
+                        sync_to_cloud() 
                         
                         st.session_state.messages.append({"role": "model", "parts": [f"Đã nạp thêm {len(new_questions)} câu hỏi vào Ngân Hàng Đề và lưu lên Cloud!"]})
                         st.session_state.current_page = "📝 Phòng Thi Ảo"
@@ -181,7 +205,7 @@ if st.session_state.current_page == "💬 Chat Mentor":
                     st.chat_message("ai").markdown(response.text)
                     st.session_state.messages.append({"role": "model", "parts": [response.text]})
         else:
-            st.warning("Nhớ nhập API Key nhé Phát!")
+            st.warning("Nhớ nhập API Key nhé Thành Phát!")
 
 # ==========================================
 # CHẾ ĐỘ 2: PHÒNG THI ẢO 
@@ -215,7 +239,7 @@ elif st.session_state.current_page == "📝 Phòng Thi Ảo":
 # CHẾ ĐỘ 3: SỔ TAY CÂU SAI
 # ==========================================
 elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
-    st.subheader("📓 Góc Ôn Tập Của Phát")
+    st.subheader("📓 Góc Ôn Tập Của Thành Phát")
     if len(st.session_state.wrong_notebook) == 0:
         st.success("Tuyệt vời! Bạn chưa làm sai câu nào.")
     else:
@@ -224,3 +248,10 @@ elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
             with st.expander(f"⚠️ {wq['question']}"):
                 st.error(f"**Đáp án đúng:** {wq['answer']}")
                 st.info(f"**Cơ chế bệnh sinh:** {wq['explanation']}")
+
+# --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
+st.markdown("""
+    <div class="footer">
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Mentor Y Khoa Thông Minh</p>
+    </div>
+""", unsafe_allow_html=True)
