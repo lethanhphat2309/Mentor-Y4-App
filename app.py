@@ -6,38 +6,17 @@ import re
 import random
 import gspread 
 from google.oauth2.service_account import Credentials 
+from PIL import Image # MỚI: Công cụ xử lý hình ảnh
 
 # --- 1. CẤU HÌNH GIAO DIỆN & BẢN QUYỀN THÀNH PHÁT ---
 st.set_page_config(page_title="Mentor Y4 - Thành Phát", page_icon="👨‍⚕️", layout="centered")
 
-# CSS: Giao diện Vàng Gold và Chân trang bản quyền
 st.markdown("""
     <style>
     .stRadio > label { font-weight: bold; color: #D4AF37; font-size: 16px;}
-    .stButton>button { 
-        border-radius: 12px; 
-        border: 2px solid #D4AF37; 
-        color: #D4AF37;
-        background-color: transparent;
-        font-weight: bold;
-        transition: 0.3s;
-    }
-    .stButton>button:hover {
-        background-color: #D4AF37;
-        color: white;
-    }
-    .footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: transparent;
-        color: #888;
-        text-align: center;
-        font-size: 13px;
-        padding: 10px;
-        border-top: 1px solid #333;
-    }
+    .stButton>button { border-radius: 12px; border: 2px solid #D4AF37; color: #D4AF37; background-color: transparent; font-weight: bold; transition: 0.3s;}
+    .stButton>button:hover { background-color: #D4AF37; color: white;}
+    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: transparent; color: #888; text-align: center; font-size: 13px; padding: 10px; border-top: 1px solid #333;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -54,7 +33,6 @@ def init_gsheets():
         client = gspread.authorize(creds)
         return client.open("Mentor_Y4_Database") 
     except Exception as e:
-        st.error(f"🚨 Lỗi kết nối Cloud: {e}") 
         return None
 
 sheet_db = init_gsheets()
@@ -77,7 +55,7 @@ def parse_sheet_data(worksheet):
         return []
 
 if "data_loaded" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý y khoa của bạn đã sẵn sàng!"]}]
+    st.session_state.messages = [{"role": "model", "parts": ["Chào Thành Phát! Trợ lý y khoa của bạn đã sẵn sàng! Gửi ảnh sách giáo khoa lên đây mình đọc cho nhé!"]}]
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
@@ -87,11 +65,9 @@ if "data_loaded" not in st.session_state:
         try:
             st.session_state.quiz_data = parse_sheet_data(sheet_db.worksheet("QuizBank"))
             st.session_state.wrong_notebook = parse_sheet_data(sheet_db.worksheet("WrongNotebook"))
-        except:
-            pass 
+        except: pass 
 
 def format_for_sheet(data_list):
-    # Luôn đổ dữ liệu với tiêu đề in hoa cho đẹp
     rows = [["CÂU HỎI", "CÁC ĐÁP ÁN", "ĐÁP ÁN ĐÚNG", "GIẢI THÍCH"]]
     if not data_list: return rows
     for item in data_list:
@@ -105,61 +81,63 @@ def sync_to_cloud():
             quiz_ws = sheet_db.worksheet("QuizBank")
             quiz_ws.clear() 
             quiz_ws.update(format_for_sheet(st.session_state.quiz_data)) 
-            
             wrong_ws = sheet_db.worksheet("WrongNotebook")
             wrong_ws.clear()
             wrong_ws.update(format_for_sheet(st.session_state.wrong_notebook))
-        except Exception as e:
-            pass
+        except: pass
 
-# --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI ---
+# --- 4. THANH ĐIỀU HƯỚNG BÊN TRÁI & XỬ LÝ FILE MỚI ---
 with st.sidebar:
     st.markdown("### 👨‍⚕️ Chủ sở hữu: **Thành Phát**")
-    st.caption("Phiên bản Y4 - Cloud Sync v2.0")
+    st.caption("Phiên bản Y4 - Vision AI v3.0")
     st.markdown("---")
     
     st.header("⚙️ Hệ Thống")
     api_key = st.text_input("Nhập Google Gemini API Key:", type="password")
-    model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-1.5-pro-latest"])
+    model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-pro-latest"])
     
     st.markdown("---")
     menu_options = ["💬 Chat Mentor", "📝 Phòng Thi Ảo", "📓 Sổ Tay Câu Sai"]
     selected_page = st.radio("📌 Điều Hướng Ứng Dụng", menu_options, index=menu_options.index(st.session_state.current_page))
-    
     if selected_page != st.session_state.current_page:
         st.session_state.current_page = selected_page
         st.rerun()
     
-    uploaded_file = st.file_uploader("Tải tài liệu PDF", type=["pdf", "txt"])
+    # MỚI: Nâng cấp khay chứa đồ nhận cả Ảnh và PDF
+    uploaded_file = st.file_uploader("📸 Tải PDF, TXT hoặc Ảnh chụp sách", type=["pdf", "txt", "png", "jpg", "jpeg"])
+    
+    pdf_text = ""
+    img_data = None
+    
+    if uploaded_file is not None:
+        file_ext = uploaded_file.name.split('.')[-1].lower()
+        if file_ext == 'pdf':
+            try:
+                reader = PyPDF2.PdfReader(uploaded_file)
+                pdf_text = f"\n\n[DỮ LIỆU SÁCH]:\n" + "".join([page.extract_text() for page in reader.pages])[:15000]
+                st.success("Đã đọc xong PDF!")
+            except: pass
+        elif file_ext in ['png', 'jpg', 'jpeg']:
+            try:
+                img_data = Image.open(uploaded_file)
+                st.image(img_data, caption="Ảnh đang phân tích", use_container_width=True) # Hiện ảnh cho Phát xem
+                st.success("Đã nạp ảnh vào Mắt AI!")
+            except: pass
     
     st.markdown("---")
-    st.caption("Quản lý Cloud:")
     if st.button("🔄 Ép Đồng Bộ Lên Cloud Ngay"):
         sync_to_cloud()
-        st.success("Đã lưu an toàn lên Google Sheets!")
-        
-    if st.button("🗑️ Xóa sạch Sổ Tay (Cả trên Cloud)"):
-        st.session_state.wrong_notebook = []
-        sync_to_cloud()
-        st.rerun()
-
-pdf_text = ""
-if uploaded_file is not None:
-    try:
-        reader = PyPDF2.PdfReader(uploaded_file)
-        pdf_text = f"\n\n[DỮ LIỆU PDF]:\n" + "".join([page.extract_text() for page in reader.pages])[:20000]
-    except:
-        pass
+        st.success("Đã lưu an toàn lên Cloud!")
 
 # ==========================================
-# CHẾ ĐỘ 1: CHAT MENTOR
+# CHẾ ĐỘ 1: CHAT MENTOR (CÓ MẮT THẦN)
 # ==========================================
 if st.session_state.current_page == "💬 Chat Mentor":
     for msg in st.session_state.messages:
         with st.chat_message("ai" if msg["role"] == "model" else "user"):
             st.markdown(msg["parts"][0], unsafe_allow_html=True)
 
-    user_input = st.chat_input("Nhắn Mentor (VD: Tạo 5 câu trắc nghiệm)")
+    user_input = st.chat_input("Nhắn Mentor (VD: Tạo 5 câu trắc nghiệm từ ảnh này)")
 
     if user_input:
         st.chat_message("user").write(user_input)
@@ -167,10 +145,11 @@ if st.session_state.current_page == "💬 Chat Mentor":
         
         if api_key:
             genai.configure(api_key=api_key)
+            
             if any(kw in user_input.lower() for kw in ["trắc nghiệm", "câu hỏi", "test", "đề thi"]):
                 model = genai.GenerativeModel(model_name=model_choice, generation_config={"response_mime_type": "application/json"})
                 schema_instruction = (
-                    "Bạn là Mentor Y Khoa. Trả về MẢNG JSON chứa trắc nghiệm:\n"
+                    "Bạn là Mentor Y Khoa. Dựa vào nội dung văn bản hoặc hình ảnh được cung cấp, hãy tạo MẢNG JSON chứa trắc nghiệm:\n"
                     "[\n"
                     "  {\n"
                     "    \"question\": \"Câu hỏi...\",\n"
@@ -181,10 +160,15 @@ if st.session_state.current_page == "💬 Chat Mentor":
                     "]\n"
                     "TUYỆT ĐỐI KHÔNG để dấu phẩy (,) ở cuối phần tử cuối cùng."
                 )
-                full_prompt = schema_instruction + pdf_text + "\n\nYêu cầu tạo test: " + user_input
-                with st.spinner("Đang soạn đề thi và lưu lên Cloud..."):
+                
+                # Nạp chung lời nhắc, chữ (nếu có) và Ảnh (nếu có) cho AI
+                prompt_parts = [schema_instruction + pdf_text + "\n\nYêu cầu tạo test: " + user_input]
+                if img_data:
+                    prompt_parts.append(img_data)
+                    
+                with st.spinner("Mắt thần AI đang quét ảnh và soạn đề..."):
                     try:
-                        response = model.generate_content(full_prompt)
+                        response = model.generate_content(prompt_parts)
                         clean_json = re.sub(r',\s*]', ']', response.text)
                         clean_json = re.sub(r',\s*}', '}', clean_json)
                         new_questions = json.loads(clean_json)
@@ -192,18 +176,24 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         st.session_state.quiz_data.extend(new_questions)
                         sync_to_cloud() 
                         
-                        st.session_state.messages.append({"role": "model", "parts": [f"Đã nạp thêm {len(new_questions)} câu hỏi vào Ngân Hàng Đề và lưu lên Cloud!"]})
+                        st.session_state.messages.append({"role": "model", "parts": [f"Đã quét xong ảnh/tài liệu! Nạp thêm {len(new_questions)} câu hỏi vào Ngân Hàng Đề và lưu Cloud!"]})
                         st.session_state.current_page = "📝 Phòng Thi Ảo"
                         st.rerun() 
                     except Exception as e:
-                        st.error(f"Lỗi tạo đề thi JSON: {e}")
+                        st.error(f"Lỗi AI: Vui lòng đợi 1 phút (Quota) hoặc đổi bộ não AI khác nhé!")
             else:
                 model = genai.GenerativeModel(model_choice)
-                full_prompt = "Bạn là Mentor Y Khoa." + pdf_text + "\n\n" + user_input
-                with st.spinner("Mentor đang nghĩ..."):
-                    response = model.generate_content(full_prompt)
-                    st.chat_message("ai").markdown(response.text)
-                    st.session_state.messages.append({"role": "model", "parts": [response.text]})
+                prompt_parts = ["Bạn là Mentor Y Khoa. Phân tích tài liệu hoặc hình ảnh sau để trả lời." + pdf_text + "\n\n" + user_input]
+                if img_data:
+                    prompt_parts.append(img_data)
+                    
+                with st.spinner("Mentor đang nhìn ảnh và suy nghĩ..."):
+                    try:
+                        response = model.generate_content(prompt_parts)
+                        st.chat_message("ai").markdown(response.text)
+                        st.session_state.messages.append({"role": "model", "parts": [response.text]})
+                    except:
+                        st.error("Lỗi Quota: Hãy chờ 1 chút hoặc đổi sang AI khác nhé!")
         else:
             st.warning("Nhớ nhập API Key nhé Thành Phát!")
 
@@ -252,6 +242,6 @@ elif st.session_state.current_page == "📓 Sổ Tay Câu Sai":
 # --- 5. CHÂN TRANG BẢN QUYỀN THÀNH PHÁT ---
 st.markdown("""
     <div class="footer">
-        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Mentor Y Khoa Thông Minh</p>
+        <p>© 2024 - Bản quyền thuộc về <b>Thành Phát</b> | Phiên bản Vision AI v3.0</p>
     </div>
 """, unsafe_allow_html=True)
