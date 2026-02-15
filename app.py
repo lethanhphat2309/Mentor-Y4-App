@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 import json
+import re # <-- MỚI: Thêm thư viện dọn dẹp chuỗi siêu mạnh
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Mentor Y4 - Tương Tác", page_icon="👨‍⚕️", layout="centered")
@@ -22,7 +23,6 @@ if "quiz_data" not in st.session_state:
     st.session_state.quiz_data = []
 if "wrong_notebook" not in st.session_state:
     st.session_state.wrong_notebook = []
-# MỚI: Biến điều hướng để tự động chuyển trang
 if "nav_menu" not in st.session_state:
     st.session_state.nav_menu = "💬 Chat Mentor" 
 
@@ -33,7 +33,6 @@ with st.sidebar:
     model_choice = st.selectbox("Chọn Bộ Não AI:", ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-1.5-pro-latest"])
     
     st.markdown("---")
-    # MỚI: Menu điều hướng cho phép code tự động thay đổi trang
     st.radio("📌 Điều Hướng Ứng Dụng", 
              ["💬 Chat Mentor", "📝 Phòng Thi Ảo", "📓 Sổ Tay Câu Sai"], 
              key="nav_menu")
@@ -43,7 +42,6 @@ with st.sidebar:
         st.session_state.wrong_notebook = []
         st.rerun()
 
-# Xử lý file PDF
 pdf_text = ""
 if uploaded_file is not None:
     try:
@@ -69,43 +67,44 @@ if st.session_state.nav_menu == "💬 Chat Mentor":
         if api_key:
             genai.configure(api_key=api_key)
             
-            # KIỂM TRA TỪ KHÓA ĐỂ BẬT CHẾ ĐỘ "TẠO ĐỀ THI"
             if any(kw in user_input.lower() for kw in ["trắc nghiệm", "câu hỏi", "test", "đề thi"]):
-                
-                # CÔNG NGHỆ MỚI: ÉP AI CHỈ ĐƯỢC PHÉP TRẢ VỀ DỮ LIỆU JSON
                 model = genai.GenerativeModel(
                     model_name=model_choice,
                     generation_config={"response_mime_type": "application/json"}
                 )
                 
+                # Lệnh hệ thống nghiêm ngặt hơn
                 schema_instruction = (
                     "Bạn là Mentor Y Khoa. Trả về một MẢNG JSON chứa các câu hỏi trắc nghiệm. Định dạng BẮT BUỘC:\n"
                     "[\n"
                     "  {\n"
                     "    \"question\": \"Nội dung câu hỏi...\",\n"
                     "    \"options\": [\"A. ...\", \"B. ...\", \"C. ...\", \"D. ...\"],\n"
-                    "    \"answer\": \"A. ...\" (Phải copy y hệt 1 option đúng vào đây),\n"
+                    "    \"answer\": \"A. ...\",\n"
                     "    \"explanation\": \"Giải thích cơ chế y khoa thật chi tiết...\"\n"
                     "  }\n"
-                    "]"
+                    "]\n"
+                    "CẢNH BÁO: TUYỆT ĐỐI KHÔNG để dấu phẩy (,) ở cuối phần tử cuối cùng của mảng. Trả về chuẩn JSON 100%."
                 )
                 full_prompt = schema_instruction + pdf_text + "\n\nYêu cầu tạo test: " + user_input
                 
                 with st.spinner("Đang lên đề thi và chuẩn bị chuyển bạn vào Phòng Thi Ảo..."):
                     try:
                         response = model.generate_content(full_prompt)
-                        st.session_state.quiz_data = json.loads(response.text)
                         
+                        # CÔNG NGHỆ CHỐNG LỖI TẠI ĐÂY
+                        raw_json = response.text
+                        clean_json = re.sub(r',\s*]', ']', raw_json) # Xóa dấu phẩy thừa trước ngoặc vuông
+                        clean_json = re.sub(r',\s*}', '}', clean_json) # Xóa dấu phẩy thừa trước ngoặc nhọn
+                        
+                        st.session_state.quiz_data = json.loads(clean_json)
                         st.session_state.messages.append({"role": "model", "parts": ["Đã chuẩn bị xong đề thi!"]})
-                        
-                        # LỆNH PHÉP THUẬT: TỰ ĐỘNG CHUYỂN TRANG
                         st.session_state.nav_menu = "📝 Phòng Thi Ảo"
-                        st.rerun() # Refresh app để nhảy thẳng sang trang mới
+                        st.rerun() 
                         
                     except Exception as e:
-                        st.error(f"Lỗi tạo đề thi JSON. Hãy thử yêu cầu lại nhé! Lỗi: {e}")
+                        st.error(f"Lỗi hệ thống. Phát thử gửi lại yêu cầu nhé! Lỗi chi tiết: {e}")
             
-            # CHẾ ĐỘ CHAT BÌNH THƯỜNG
             else:
                 model = genai.GenerativeModel(model_choice)
                 full_prompt = "Bạn là Mentor Y Khoa. Trình bày rõ ràng." + pdf_text + "\n\n" + user_input
@@ -117,7 +116,7 @@ if st.session_state.nav_menu == "💬 Chat Mentor":
             st.warning("Nhớ nhập API Key nhé Phát!")
 
 # ==========================================
-# CHẾ ĐỘ 2: PHÒNG THI ẢO (CÓ NÚT BẤM)
+# CHẾ ĐỘ 2: PHÒNG THI ẢO 
 # ==========================================
 elif st.session_state.nav_menu == "📝 Phòng Thi Ảo":
     st.subheader("📝 Bài Kiểm Tra Tương Tác")
@@ -126,7 +125,6 @@ elif st.session_state.nav_menu == "📝 Phòng Thi Ảo":
     else:
         for idx, q in enumerate(st.session_state.quiz_data):
             st.markdown(f"**Câu {idx+1}: {q['question']}**")
-            # Tự động render nút tròn
             choice = st.radio("Chọn đáp án:", q['options'], key=f"radio_{idx}", index=None)
             
             if st.button(f"Nộp đáp án Câu {idx+1}", key=f"btn_{idx}"):
@@ -137,7 +135,6 @@ elif st.session_state.nav_menu == "📝 Phòng Thi Ảo":
                     st.balloons()
                 else:
                     st.error(f"❌ SAI RỒI! \n\n**Đáp án đúng:** {q['answer']} \n\n**Giải thích sâu:** {q['explanation']}")
-                    # Tự động gắp vào sổ tay
                     if not any(item['question'] == q['question'] for item in st.session_state.wrong_notebook):
                         st.session_state.wrong_notebook.append(q)
             st.markdown("---")
