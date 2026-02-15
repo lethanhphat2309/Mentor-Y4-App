@@ -4,8 +4,8 @@ import PyPDF2
 import json
 import re
 import random
-import gspread # MỚI: Ống hút dữ liệu
-from google.oauth2.service_account import Credentials # MỚI: Chìa khóa vào kho
+import gspread 
+from google.oauth2.service_account import Credentials 
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Mentor Y4 - Cloud Sync", page_icon="👨‍⚕️", layout="centered")
@@ -30,41 +30,65 @@ def init_gsheets():
         client = gspread.authorize(creds)
         return client.open("Mentor_Y4_Database") 
     except Exception as e:
-        # Máy phát hiện nói dối
-        st.error(f"🚨 Lỗi thật sự là: {e}") 
+        st.error(f"🚨 Lỗi kết nối Cloud: {e}") 
         return None
 
-# DÒNG NÀY LÚC NÃY MÌNH QUÊN ĐƯA CHO BẠN NÈ:
 sheet_db = init_gsheets()
 
 # --- 3. BỘ NHỚ HỆ THỐNG & TỰ ĐỘNG TẢI DỮ LIỆU ---
+# Hàm đọc dữ liệu dạng Bảng từ Excel về App
+def parse_sheet_data(worksheet):
+    try:
+        records = worksheet.get_all_records()
+        data = []
+        for row in records:
+            # Tách các đáp án ra bằng dấu xuống dòng
+            options = [opt.strip() for opt in str(row.get("Các đáp án", "")).split("\n") if opt.strip()]
+            data.append({
+                "question": str(row.get("Câu hỏi", "")),
+                "options": options,
+                "answer": str(row.get("Đáp án đúng", "")),
+                "explanation": str(row.get("Giải thích", ""))
+            })
+        return data
+    except:
+        return []
+
 if "data_loaded" not in st.session_state:
     st.session_state.messages = [{"role": "model", "parts": ["Chào Phát! Dữ liệu của bạn đã được bảo vệ trên Cloud!"]}]
     st.session_state.quiz_data = []
     st.session_state.wrong_notebook = []
     st.session_state.current_page = "💬 Chat Mentor"
-    st.session_state.data_loaded = True # Đánh dấu đã tải
+    st.session_state.data_loaded = True 
     
-    # Hút dữ liệu từ ô A1 của Google Sheets về App
+    # Hút dữ liệu từ Bảng Excel về App
     if sheet_db:
         try:
-            quiz_val = sheet_db.worksheet("QuizBank").acell('A1').value
-            if quiz_val: st.session_state.quiz_data = json.loads(quiz_val)
-            
-            wrong_val = sheet_db.worksheet("WrongNotebook").acell('A1').value
-            if wrong_val: st.session_state.wrong_notebook = json.loads(wrong_val)
+            st.session_state.quiz_data = parse_sheet_data(sheet_db.worksheet("QuizBank"))
+            st.session_state.wrong_notebook = parse_sheet_data(sheet_db.worksheet("WrongNotebook"))
         except:
-            pass # Lần đầu tiên file Excel rỗng thì bỏ qua
+            pass 
 
-# Hàm Tự Động Bơm Dữ Liệu Lên Cloud
+# Hàm dàn trang và bơm dữ liệu lên Cloud
+def format_for_sheet(data_list):
+    # Tạo tiêu đề cột
+    rows = [["Câu hỏi", "Các đáp án", "Đáp án đúng", "Giải thích"]]
+    if not data_list: return rows
+    for item in data_list:
+        options_str = "\n".join(item['options']) # Gộp các đáp án lại, cách nhau bằng dấu xuống dòng
+        rows.append([item['question'], options_str, item['answer'], item['explanation']])
+    return rows
+
 def sync_to_cloud():
     if sheet_db:
         try:
-            # Gói toàn bộ câu hỏi thành 1 cục JSON và nhét thẳng vào ô A1
-            q_str = json.dumps(st.session_state.quiz_data, ensure_ascii=False)
-            w_str = json.dumps(st.session_state.wrong_notebook, ensure_ascii=False)
-            sheet_db.worksheet("QuizBank").update_acell('A1', q_str)
-            sheet_db.worksheet("WrongNotebook").update_acell('A1', w_str)
+            quiz_ws = sheet_db.worksheet("QuizBank")
+            quiz_ws.clear() # Xóa bảng cũ
+            quiz_ws.update(format_for_sheet(st.session_state.quiz_data)) # Điền bảng mới
+            
+            wrong_ws = sheet_db.worksheet("WrongNotebook")
+            wrong_ws.clear()
+            wrong_ws.update(format_for_sheet(st.session_state.wrong_notebook))
         except Exception as e:
             pass
 
@@ -142,7 +166,7 @@ if st.session_state.current_page == "💬 Chat Mentor":
                         new_questions = json.loads(clean_json)
                         
                         st.session_state.quiz_data.extend(new_questions)
-                        sync_to_cloud() # <--- TỰ ĐỘNG ĐỒNG BỘ LÊN CLOUD NGAY LẬP TỨC
+                        sync_to_cloud() # TỰ ĐỘNG ĐỒNG BỘ LÊN CLOUD
                         
                         st.session_state.messages.append({"role": "model", "parts": [f"Đã nạp thêm {len(new_questions)} câu hỏi vào Ngân Hàng Đề và lưu lên Cloud!"]})
                         st.session_state.current_page = "📝 Phòng Thi Ảo"
@@ -182,10 +206,9 @@ elif st.session_state.current_page == "📝 Phòng Thi Ảo":
                     st.balloons()
                 else:
                     st.error(f"❌ SAI RỒI! \n\n**Đáp án đúng:** {q['answer']} \n\n**Giải thích sâu:** {q['explanation']}")
-                    # Tự động gắp vào sổ tay và lưu ngay lên Cloud
                     if not any(item['question'] == q['question'] for item in st.session_state.wrong_notebook):
                         st.session_state.wrong_notebook.append(q)
-                        sync_to_cloud() # <--- TỰ ĐỘNG LƯU CÂU SAI LÊN CLOUD
+                        sync_to_cloud() 
             st.markdown("---")
 
 # ==========================================
